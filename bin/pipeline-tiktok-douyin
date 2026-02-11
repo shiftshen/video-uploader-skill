@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""
+TikTok Industrial Video + Douyin Upload Pipeline
+Generate industrial ASMR video and upload to Douyin
+"""
+
+import asyncio
+import subprocess
+import sys
+from pathlib import Path
+from datetime import datetime
+
+
+async def generate_video(theme: str) -> str:
+    """Generate TikTok Industrial video using subprocess"""
+    print(f"\n🎬 Step 1: Generate {theme} video...")
+    
+    # Run TikTok Industrial generator
+    tiktok_skill = Path.home() / ".openclaw/workspace/skills/tiktok-industrial-relaxing/bin/tiktok-industrial"
+    
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable, str(tiktok_skill), "generate", theme,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT
+    )
+    
+    output = []
+    while True:
+        line = await proc.stdout.readline()
+        if not line:
+            break
+        text = line.decode().strip()
+        output.append(text)
+        print(f"  {text}")
+    
+    await proc.wait()
+    
+    if proc.returncode != 0:
+        print(f"❌ Failed to generate video!")
+        return None
+    
+    # Find the generated video
+    video_dir = Path.home() / "Videos" / "tiktok-industrial"
+    if video_dir.exists():
+        # Get most recent video
+        videos = sorted(video_dir.glob(f"{theme}_*.mp4"), key=lambda x: x.stat().st_mtime, reverse=True)
+        if videos:
+            return str(videos[0])
+    
+    print(f"❌ Could not find generated video!")
+    return None
+
+
+async def upload_to_douyin(video_path: str, title: str, tags: list):
+    """Upload video to Douyin"""
+    # Add douyin skill to path
+    douyin_skill_dir = Path(__file__).parent.parent
+    sys.path.insert(0, str(douyin_skill_dir / "scripts"))
+    
+    from douyin_uploader.main import DouYinVideo
+    
+    print(f"\n🚀 Step 2: Upload to Douyin...")
+    
+    cookie_file = douyin_skill_dir / "credentials" / "douyin" / "storage.json"
+    
+    if not cookie_file.exists():
+        print("❌ Douyin cookie not found! Please login first:")
+        print(f"   cd {douyin_skill_dir}")
+        print("   PYTHONPATH=scripts python3 bin/login-douyin")
+        return False
+    
+    video = DouYinVideo(
+        title=title,
+        file_path=video_path,
+        tags=tags,
+        publish_date=0,
+        account_file=str(cookie_file),
+        thumbnail_path=None  # Auto-capture from video
+    )
+    
+    await video.main()
+    return True
+
+
+async def log_to_sheet(video_path: str, platform: str, status: str):
+    """Log to Google Sheet"""
+    # This would integrate with Google Sheets API
+    # For now, just print the log
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"\n📋 Sheet Log:")
+    print(f"   时间: {timestamp}")
+    print(f"   视频: {Path(video_path).name}")
+    print(f"   平台: {platform}")
+    print(f"   状态: {status}")
+
+
+async def main():
+    """Main pipeline"""
+    import argparse
+    
+    parser = argparse.ArgumentParser(
+        description='Generate industrial video and upload to Douyin'
+    )
+    parser.add_argument(
+        '--theme', 
+        default='hydraulic-press',
+        help='Video theme (default: hydraulic-press)'
+    )
+    parser.add_argument(
+        '--title',
+        required=True,
+        help='Video title for Douyin'
+    )
+    parser.add_argument(
+        '--tags',
+        default='工业,解压,液压机',
+        help='Tags for Douyin (comma-separated)'
+    )
+    
+    args = parser.parse_args()
+    
+    print("=" * 60)
+    print("🎬 TikTok Industrial + Douyin Upload Pipeline")
+    print("=" * 60)
+    
+    # Step 1: Generate video
+    video_path = await generate_video(args.theme)
+    
+    if not video_path:
+        print("\n❌ Pipeline failed at video generation!")
+        await log_to_sheet("", "Douyin", "失败 - 视频生成失败")
+        return
+    
+    print(f"\n✅ Video generated: {video_path}")
+    
+    # Step 2: Upload to Douyin
+    tags = [t.strip() for t in args.tags.split(',')]
+    success = await upload_to_douyin(video_path, args.title, tags)
+    
+    if success:
+        print("\n" + "=" * 60)
+        print("🎉 Pipeline completed successfully!")
+        print("=" * 60)
+        await log_to_sheet(video_path, "Douyin", "成功")
+    else:
+        print("\n❌ Upload failed!")
+        await log_to_sheet(video_path, "Douyin", "失败 - 上传失败")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
