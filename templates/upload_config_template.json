@@ -1,0 +1,18 @@
+{
+  "platform": "douyin",
+  "video": {
+    "path": "/path/to/video.mp4",
+    "title": "Video Title Here",
+    "description": "Detailed description of the video content",
+    "tags": ["tag1", "tag2", "tag3"]
+  },
+  "account": {
+    "cookie_file": "/path/to/cookie.json"
+  },
+  "options": {
+    "publish_date": "2024-12-31 18:00:00",
+    "thumbnail": "/path/to/thumbnail.jpg",
+    "product_link": "https://example.com/product",
+    "product_title": "Product Name"
+  }
+}
