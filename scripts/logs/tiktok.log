@@ -1,0 +1,3 @@
+2026-02-11 22:31:50.900 | INFO     | tk_uploader.main:get_tiktok_cookie:69 - [+] Opening TikTok login page...
+2026-02-11 23:03:54.526 | INFO     | tk_uploader.main:upload:192 - [+]Uploading-------TikTok测试上传.mp4
+2026-02-11 23:04:05.380 | ERROR    | tk_uploader.main:upload:200 - Neither iframe nor div appeared within the timeout.

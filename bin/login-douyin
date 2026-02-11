@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""
+Douyin Login Helper - Login to Douyin Creator Center
+
+Usage:
+    python3 bin/login_douyin.py
+"""
+
+import asyncio
+from pathlib import Path
+import sys
+
+# Add scripts directory to path
+SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
+sys.path.insert(0, str(SCRIPTS_DIR))
+
+from douyin_uploader.main import douyin_cookie_gen
+
+# Credentials directory
+SKILL_DIR = Path(__file__).parent.parent
+ACCOUNT_FILE = SKILL_DIR / "credentials" / "douyin" / "storage.json"
+
+
+async def login():
+    print("=" * 60)
+    print("抖音创作者中心登录")
+    print("=" * 60)
+    print()
+    print(f"Cookie 保存位置: {ACCOUNT_FILE}")
+    print()
+    
+    if ACCOUNT_FILE.exists():
+        print(f"📁 发现已有 Cookie 文件 ({ACCOUNT_FILE.stat().st_size} bytes)")
+        print()
+    
+    print("步骤:")
+    print("  1. 浏览器将打开抖音创作者中心")
+    print("  2. 使用手机扫码登录")
+    print("  3. 登录成功后浏览器会自动关闭")
+    print()
+    print("-" * 60)
+    
+    # 开始登录流程
+    await douyin_cookie_gen(str(ACCOUNT_FILE))
+    
+    if ACCOUNT_FILE.exists():
+        print()
+        print("=" * 60)
+        print(f"✅ 登录成功！Cookie 已保存 ({ACCOUNT_FILE.stat().st_size} bytes)")
+        print("=" * 60)
+    else:
+        print()
+        print("=" * 60)
+        print("❌ Cookie 未保存，请重试")
+        print("=" * 60)
+
+
+if __name__ == "__main__":
+    asyncio.run(login())

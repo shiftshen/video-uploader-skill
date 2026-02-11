@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+"""
+Multi-Platform Video Uploader for OpenClaw
+
+Supports: Douyin, Kuaishou, TikTok, Tencent Video, Xiaohongshu
+
+Usage:
+    video-uploader upload --platform douyin --title "标题" --video /path/video.mp4 --tags tag1,tag2
+    video-uploader login --platform tiktok
+    video-uploader platforms
+"""
+
+import argparse
+import asyncio
+import sys
+from pathlib import Path
+
+# Add scripts directory to path
+SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
+sys.path.insert(0, str(SCRIPTS_DIR))
+
+# Import conf for BASE_DIR
+import importlib.util
+conf_path = SCRIPTS_DIR / "conf.py"
+if conf_path.exists():
+    spec = importlib.util.spec_from_file_location("conf", conf_path)
+    conf = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(conf)
+
+
+async def upload_video(platform, title, video, tags, account, publish_date='0', **kwargs):
+    """Upload video to specified platform."""
+    
+    if platform == 'douyin':
+        from douyin_uploader.main import douyin_setup, DouYinVideo
+        if not await douyin_setup(account, handle=True):
+            print("❌ Douyin login failed")
+            return False
+        
+        video_obj = DouYinVideo(
+            title=title,
+            file_path=video,
+            tags=[t.strip() for t in tags.split(',')],
+            publish_date=kwargs.get('publish_date', 0),
+            account_file=account,
+            thumbnail_path=kwargs.get('thumbnail'),
+            productLink=kwargs.get('product_link', ''),
+            productTitle=kwargs.get('product_title', '')
+        )
+        await video_obj.main()
+        
+    elif platform == 'kuaishou':
+        from ks_uploader.main import ks_setup, KSVideo
+        if not await ks_setup(account, handle=True):
+            print("❌ Kuaishou login failed")
+            return False
+        
+        video_obj = KSVideo(
+            title=title,
+            file_path=video,
+            tags=[t.strip() for t in tags.split(',')],
+            publish_date=kwargs.get('publish_date', 0),
+            account_file=account
+        )
+        await video_obj.main()
+        
+    elif platform == 'tiktok':
+        from tk_uploader.main import tiktok_setup, TiktokVideo
+        if not await tiktok_setup(account, handle=True):
+            print("❌ TikTok login failed")
+            return False
+        
+        video_obj = TiktokVideo(
+            title=title,
+            file_path=video,
+            tags=[t.strip() for t in tags.split(',')],
+            publish_date=kwargs.get('publish_date', 0),
+            account_file=account
+        )
+        await video_obj.main()
+        
+    elif platform == 'tencent':
+        from tencent_uploader.main import weixin_setup, TencentVideo
+        if not await weixin_setup(account, handle=True):
+            print("❌ Tencent/WeChat login failed")
+            return False
+        
+        video_obj = TencentVideo(
+            title=title,
+            file_path=video,
+            tags=[t.strip() for t in tags.split(',')],
+            publish_date=kwargs.get('publish_date', 0),
+            account_file=account,
+            category=kwargs.get('category')
+        )
+        await video_obj.main()
+        
+    elif platform == 'xiaohongshu':
+        print("❌ Xiaohongshu requires signature server. Use manual upload.")
+        return False
+        
+    print(f"✅ Upload to {platform} completed!")
+    return True
+
+
+async def login_platform(platform):
+    """Open browser for manual login."""
+    from douyin_uploader.main import douyin_cookie_gen
+    from ks_uploader.main import ks_cookie_gen
+    from tk_uploader.main import get_tiktok_cookie
+    from tencent_uploader.main import weixin_cookie_gen
+    
+    account = get_default_account(platform)
+    
+    if platform == 'douyin':
+        await douyin_cookie_gen(account)
+    elif platform == 'kuaishou':
+        await ks_cookie_gen(account)
+    elif platform == 'tiktok':
+        await get_tiktok_cookie(account)
+    elif platform == 'tencent':
+        await weixin_cookie_gen(account)
+    else:
+        print(f"❌ Unknown platform: {platform}")
+
+
+def list_platforms():
+    """List supported platforms."""
+    platforms = [
+        ("douyin", "抖音", "China's leading short video platform"),
+        ("kuaishou", "快手", "Popular Chinese short video platform"),
+        ("tiktok", "TikTok", "International short video platform"),
+        ("tencent", "视频号", "WeChat Channels video platform"),
+        ("xiaohongshu", "小红书", "Chinese lifestyle platform (manual only)"),
+    ]
+    
+    print("\n📱 Supported Platforms:")
+    print("-" * 60)
+    for key, name, desc in platforms:
+        print(f"  {key:15} {name:10} - {desc}")
+    print()
+
+
+def get_default_account(platform: str) -> str:
+    """Get default credentials path based on platform."""
+    skill_dir = Path(__file__).parent.parent
+    return str(skill_dir / "credentials" / platform / "storage.json")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Multi-Platform Video Uploader",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Upload to Douyin
+  video-uploader upload --platform douyin --title "My Video" --video ~/video.mp4 --tags fun,travel
+
+  # Upload to TikTok with scheduling
+  video-uploader upload --platform tiktok --title "My TikTok" --video ~/video.mp4 --tags viral --publish-date "2026-02-15 12:00:00"
+
+  # Login to a platform
+  video-uploader login --platform douyin
+
+  # List platforms
+  video-uploader platforms
+        """
+    )
+    
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    
+    # Upload command
+    upload_parser = subparsers.add_parser("upload", help="Upload video to platform")
+    upload_parser.add_argument("--platform", required=True, 
+                               choices=['douyin', 'kuaishou', 'tiktok', 'tencent', 'xhs'],
+                               help="Target platform")
+    upload_parser.add_argument("--title", required=True, help="Video title")
+    upload_parser.add_argument("--video", required=True, help="Path to video file")
+    upload_parser.add_argument("--tags", required=True, help="Comma-separated tags")
+    upload_parser.add_argument("--account", 
+                               help="Account cookie file (auto-detected by platform)")
+    upload_parser.add_argument("--publish-date", default="0",
+                               help="Schedule date (YYYY-MM-DD HH:MM:SS) or 0 for immediate")
+    upload_parser.add_argument("--thumbnail", help="Thumbnail path (Douyin only)")
+    upload_parser.add_argument("--product-link", help="Product link (Douyin only)")
+    upload_parser.add_argument("--product-title", help="Product title (Douyin only)")
+    upload_parser.add_argument("--category", help="Category (Tencent only)")
+    
+    # Login command
+    login_parser = subparsers.add_parser("login", help="Login to platform")
+    login_parser.add_argument("--platform", required=True,
+                             choices=['douyin', 'kuaishou', 'tiktok', 'tencent'])
+    
+    # Platforms command
+    subparsers.add_parser("platforms", help="List supported platforms")
+    
+    args = parser.parse_args()
+    
+    if args.command == "platforms":
+        list_platforms()
+        return
+    
+    elif args.command == "login":
+        asyncio.run(login_platform(args.platform))
+        return
+    
+    elif args.command == "upload":
+        # Resolve account path - use default if not provided
+        if args.account:
+            account = Path(args.account).expanduser()
+        else:
+            account = Path(get_default_account(args.platform))
+        
+        # Check video file
+        if not Path(args.video).exists():
+            print(f"❌ Video file not found: {args.video}")
+            sys.exit(1)
+        
+        # Ensure credentials directory exists
+        account.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Upload
+        result = asyncio.run(upload_video(
+            platform=args.platform,
+            title=args.title,
+            video=args.video,
+            tags=args.tags,
+            account=str(account),
+            publish_date=args.publish_date,
+            thumbnail=args.thumbnail,
+            product_link=args.product_link,
+            product_title=args.product_title,
+            category=args.category
+        ))
+        
+        if not result:
+            sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

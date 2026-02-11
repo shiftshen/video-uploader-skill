@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+"""
+Video Uploader - Quick Test Script
+Tests login and upload for all platforms
+"""
+
+import sys
+import asyncio
+from pathlib import Path
+
+# Setup path
+SKILL_DIR = Path(__file__).parent
+SCRIPTS_DIR = SKILL_DIR / "scripts"
+sys.path.insert(0, str(SCRIPTS_DIR))
+
+# Create credentials directory
+CREDENTIALS_DIR = SKILL_DIR / "credentials"
+for platform in ["douyin", "tiktok", "kuaishou", "tencent"]:
+    (CREDENTIALS_DIR / platform).mkdir(parents=True, exist_ok=True)
+
+
+async def test_douyin():
+    """Test Douyin login and upload"""
+    print("\n" + "="*50)
+    print("测试 1: 抖音 Douyin")
+    print("="*50)
+    
+    from douyin_uploader.main import douyin_cookie_gen, cookie_auth, DouYinVideo
+    
+    # Test login
+    cookie_file = CREDENTIALS_DIR / "douyin" / "storage.json"
+    
+    if cookie_file.exists():
+        print(f"📁 发现已有 Cookie: {cookie_file}")
+        if await cookie_auth(str(cookie_file)):
+            print("✅ Cookie 有效")
+        else:
+            print("⚠️ Cookie 无效，需要重新登录")
+            await douyin_cookie_gen(str(cookie_file))
+    else:
+        print("📝 没有 Cookie，开始登录...")
+        await douyin_cookie_gen(str(cookie_file))
+    
+    if cookie_file.exists():
+        print(f"✅ Cookie 已保存: {cookie_file} ({cookie_file.stat().st_size} bytes)")
+        print("\n🚀 测试上传...")
+        
+        video = DouYinVideo(
+            title="自动测试视频",
+            file_path=str(Path.home() / "Videos/dog_wagging_tail.mp4"),
+            tags=["测试", "自动化"],
+            publish_date=0,
+            account_file=str(cookie_file)
+        )
+        await video.main()
+        return True
+    
+    return False
+
+
+async def test_tiktok():
+    """Test TikTok login"""
+    print("\n" + "="*50)
+    print("测试 2: TikTok")
+    print("="*50)
+    
+    from tk_uploader.main import get_tiktok_cookie, cookie_auth, TiktokVideo
+    
+    cookie_file = CREDENTIALS_DIR / "tiktok" / "storage.json"
+    
+    if cookie_file.exists():
+        print(f"📁 发现已有 Cookie: {cookie_file}")
+        # TikTok cookie_auth uses different path
+    else:
+        print("📝 没有 Cookie，开始登录...")
+        print("⚠️ 浏览器将打开，请在手机上扫码登录")
+        await get_tiktok_cookie(str(cookie_file))
+    
+    if cookie_file.exists():
+        print(f"✅ Cookie 已保存: {cookie_file}")
+        return True
+    
+    return False
+
+
+async def test_kuaishou():
+    """Test Kuaishou login"""
+    print("\n" + "="*50)
+    print("测试 3: 快手 Kuaishou")
+    print("="*50)
+    
+    from ks_uploader.main import get_ks_cookie, cookie_auth
+    
+    cookie_file = CREDENTIALS_DIR / "kuaishou" / "storage.json"
+    
+    if cookie_file.exists():
+        print(f"📁 发现已有 Cookie: {cookie_file}")
+    else:
+        print("📝 没有 Cookie，开始登录...")
+        print("⚠️ 浏览器将打开，请扫码登录")
+        await get_ks_cookie(str(cookie_file))
+    
+    if cookie_file.exists():
+        print(f"✅ Cookie 已保存: {cookie_file}")
+        return True
+    
+    return False
+
+
+async def test_tencent():
+    """Test Tencent/WeChat login"""
+    print("\n" + "="*50)
+    print("测试 4: 视频号 Tencent/WeChat")
+    print("="*50)
+    
+    from tencent_uploader.main import get_tencent_cookie
+    
+    cookie_file = CREDENTIALS_DIR / "tencent" / "storage.json"
+    
+    if cookie_file.exists():
+        print(f"📁 发现已有 Cookie: {cookie_file}")
+    else:
+        print("📝 没有 Cookie，开始登录...")
+        print("⚠️ 浏览器将打开，请扫码登录")
+        await get_tencent_cookie(str(cookie_file))
+    
+    if cookie_file.exists():
+        print(f"✅ Cookie 已保存: {cookie_file}")
+        return True
+    
+    return False
+
+
+async def main():
+    """Main test function"""
+    print("\n" + "="*60)
+    print("🎬 视频上传器 - 完整测试")
+    print("="*60)
+    
+    # Test each platform
+    results = {}
+    
+    # 1. Douyin
+    try:
+        results["douyin"] = await test_douyin()
+    except Exception as e:
+        print(f"❌ 抖音测试失败: {e}")
+        results["douyin"] = False
+    
+    # 2. TikTok
+    try:
+        results["tiktok"] = await test_tiktok()
+    except Exception as e:
+        print(f"❌ TikTok 测试失败: {e}")
+        results["tiktok"] = False
+    
+    # 3. Kuaishou
+    try:
+        results["kuaishou"] = await test_kuaishou()
+    except Exception as e:
+        print(f"❌ 快手测试失败: {e}")
+        results["kuaishou"] = False
+    
+    # 4. Tencent
+    try:
+        results["tencent"] = await test_tencent()
+    except Exception as e:
+        print(f"❌ 视频号测试失败: {e}")
+        results["tencent"] = False
+    
+    # Summary
+    print("\n" + "="*60)
+    print("📊 测试结果汇总")
+    print("="*60)
+    
+    for platform, success in results.items():
+        status = "✅ 通过" if success else "❌ 失败"
+        print(f"  {platform:15} {status}")
+    
+    print()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -1,0 +1,6 @@
+2026-02-11 22:35:30.673 | INFO     | tencent_uploader.main:weixin_cookie_gen:96 - [+] Opening WeChat Channels login page...
+2026-02-11 22:35:39.112 | SUCCESS  | tencent_uploader.main:weixin_cookie_gen:112 - [+] Login detected!
+2026-02-11 22:36:23.239 | INFO     | tencent_uploader.main:weixin_cookie_gen:97 - [+] Opening WeChat Channels login page...
+2026-02-11 22:36:31.652 | SUCCESS  | tencent_uploader.main:weixin_cookie_gen:113 - [+] Login detected!
+2026-02-11 22:36:31.659 | SUCCESS  | tencent_uploader.main:weixin_cookie_gen:121 - [+] Cookie saved: credentials/tencent/storage.json
+2026-02-11 23:06:27.234 | INFO     | tencent_uploader.main:upload:172 - [+]正在上传-------视频号测试.mp4

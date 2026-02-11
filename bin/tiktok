@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""
+TikTok Video Uploader - Simplified command
+"""
+
+import sys
+from pathlib import Path
+
+# Add parent scripts directory
+SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
+sys.path.insert(0, str(SCRIPTS_DIR))
+
+import asyncio
+from tk_uploader.main import tiktok_setup, TiktokVideo
+
+
+async def main():
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Upload video to TikTok')
+    parser.add_argument('--title', required=True, help='Video title')
+    parser.add_argument('--video', required=True, help='Path to video file')
+    parser.add_argument('--tags', required=True, help='Comma-separated tags')
+    parser.add_argument('--account', default='~/.openclaw/credentials/tiktok/storage.json')
+    parser.add_argument('--publish-date', default='0', help='Schedule date')
+    
+    args = parser.parse_args()
+    
+    account = str(Path(args.account).expanduser())
+    
+    # Setup
+    if not await tiktok_setup(account, handle=True):
+        print("❌ Login failed")
+        return
+    
+    # Upload
+    video = TiktokVideo(
+        title=args.title,
+        file_path=args.video,
+        tags=[t.strip() for t in args.tags.split(',')],
+        publish_date=args.publish_date,
+        account_file=account
+    )
+    await video.main()
+    
+    print("✅ TikTok upload complete!")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

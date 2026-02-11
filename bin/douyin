@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""
+Douyin Video Uploader - Simplified command
+"""
+
+import sys
+from pathlib import Path
+
+# Add parent scripts directory
+SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
+sys.path.insert(0, str(SCRIPTS_DIR))
+
+import asyncio
+from douyin_uploader.main import douyin_setup, DouYinVideo
+
+
+def get_default_account():
+    """Get default credentials path."""
+    skill_dir = Path(__file__).parent.parent
+    return str(skill_dir / "credentials" / "douyin" / "storage.json")
+
+
+async def main():
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Upload video to Douyin')
+    parser.add_argument('--title', required=True, help='Video title')
+    parser.add_argument('--video', required=True, help='Path to video file')
+    parser.add_argument('--tags', required=True, help='Comma-separated tags')
+    parser.add_argument('--account', default=get_default_account())
+    parser.add_argument('--thumbnail', help='Thumbnail path')
+    parser.add_argument('--product-link', help='Product link')
+    parser.add_argument('--product-title', help='Product title')
+    
+    args = parser.parse_args()
+    
+    account = str(Path(args.account).expanduser())
+    
+    # 检查cookie是否存在
+    if not Path(account).exists():
+        print("❌ 未找到登录凭证，请先运行: python3 bin/login-douyin")
+        return
+    
+    # 验证cookie是否有效
+    if not await douyin_setup(account, handle=False):
+        print("⚠️ Cookie无效或已过期，需要重新登录")
+        print("请运行: python3 bin/login-douyin")
+        return
+    
+    # Upload
+    video = DouYinVideo(
+        title=args.title,
+        file_path=args.video,
+        tags=[t.strip() for t in args.tags.split(',')],
+        publish_date=0,
+        account_file=account,
+        thumbnail_path=args.thumbnail,
+        productLink=args.product_link or '',
+        productTitle=args.product_title or ''
+    )
+    await video.main()
+    
+    print("✅ Douyin upload complete!")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
