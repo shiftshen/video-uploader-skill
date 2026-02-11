@@ -82,16 +82,36 @@ async def upload_to_douyin(video_path: str, title: str, tags: list):
     return True
 
 
-async def log_to_sheet(video_path: str, platform: str, status: str):
-    """Log to Google Sheet"""
-    # This would integrate with Google Sheets API
-    # For now, just print the log
+async def log_to_sheet(video_path: str, platform: str, status: str, title_cn: str, tags: list):
+    """Log to Google Sheet using the tracker skill"""
+    import subprocess
+    
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    video_name = Path(video_path).name
+    
+    # Call the Google Sheets tracker skill
+    cmd = [
+        sys.executable,
+        str(Path.home() / ".openclaw/workspace/skills/google-sheets-tracker/bin/google-sheets-tracker"),
+        "log",
+        video_name,
+        video_path,
+        title_cn,
+        "",
+        ",".join(tags) if isinstance(tags, list) else tags,
+        "",
+        platform
+    ]
+    
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    
     print(f"\n📋 Sheet Log:")
     print(f"   时间: {timestamp}")
-    print(f"   视频: {Path(video_path).name}")
+    print(f"   视频: {video_name}")
     print(f"   平台: {platform}")
-    print(f"   状态: {status}")
+    print(f"   状态: {'✅ 成功' if result.returncode == 0 else '❌ 失败'}")
+    
+    return result.returncode == 0
 
 
 async def main():
@@ -141,10 +161,10 @@ async def main():
         print("\n" + "=" * 60)
         print("🎉 Pipeline completed successfully!")
         print("=" * 60)
-        await log_to_sheet(video_path, "Douyin", "成功")
+        await log_to_sheet(video_path, "Douyin", "成功", args.title, tags)
     else:
         print("\n❌ Upload failed!")
-        await log_to_sheet(video_path, "Douyin", "失败 - 上传失败")
+        await log_to_sheet(video_path, "Douyin", "失败 - 上传失败", args.title, tags)
         sys.exit(1)
 
 

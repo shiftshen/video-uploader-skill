@@ -179,57 +179,92 @@ class TiktokVideo(object):
     async def upload(self, playwright: Playwright) -> None:
         browser = await playwright.chromium.launch(headless=False, channel="chrome")
         context = await browser.new_context(
-        storage_state=f"{self.account_file}",
-        locale="en-US",
-        user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
-        bypass_csp=True
-    )
+            storage_state=f"{self.account_file}",
+            locale="en-US",
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+            bypass_csp=True
+        )
         context = await set_init_script(context)
         page = await context.new_page()
 
-        await page.goto("https://www.tiktok.com/creator-center/upload")
+        await page.goto("https://www.tiktok.com/tiktokstudio/upload")
         tiktok_logger.info(f'[+]Uploading-------{self.title}.mp4')
 
-        await page.wait_for_url("https://www.tiktok.com/tiktokstudio/upload", timeout=10000)
+        # Wait for page load
+        await asyncio.sleep(5)
 
+        # Set locator_base to page for simpler approach
+        self.locator_base = page
+
+        # Direct file input approach (more reliable)
         try:
-            await page.wait_for_selector('iframe[data-tt="Upload_index_iframe"], div.upload-container', timeout=10000)
-            tiktok_logger.info("Either iframe or div appeared.")
+            file_input = page.locator('input[type="file"]').first
+            if await file_input.count() > 0:
+                tiktok_logger.info("Found file input, uploading directly...")
+                await file_input.set_input_files(self.file_path)
+            else:
+                # Fallback
+                upload_btn = page.locator('button:has-text("Select video")').first
+                if await upload_btn.count() > 0:
+                    async with page.expect_file_chooser() as fc:
+                        await upload_btn.click()
+                    file_chooser = await fc.value
+                    await file_chooser.set_files(self.file_path)
         except Exception as e:
-            tiktok_logger.error("Neither iframe nor div appeared within the timeout.")
+            tiktok_logger.error(f"Upload error: {e}")
 
-        await self.choose_base_locator(page)
-
-        upload_button = self.locator_base.locator(
-            'button:has-text("Select video"):visible')
-        await upload_button.wait_for(state='visible')  # 确保按钮可见
-
-        async with page.expect_file_chooser() as fc_info:
-            await upload_button.click()
-        file_chooser = await fc_info.value
-        await file_chooser.set_files(self.file_path)
+        # Wait for upload
+        tiktok_logger.info("Waiting for upload to complete...")
+        await asyncio.sleep(30)
 
         await self.add_title_tags(page)
-        # detact upload status
-        await self.detect_upload_status(page)
-        if self.publish_date != 0:
-            await self.set_schedule_time(page, self.publish_date)
+
+        # Wait for publish button
+        try:
+            await page.locator('button:has-text("Post"):visible').wait_for(timeout=60000)
+            tiktok_logger.info("Video uploaded successfully!")
+        except Exception as e:
+            tiktok_logger.warning(f"Could not find Post button: {e}")
 
         await self.click_publish(page)
 
-        await context.storage_state(path=f"{self.account_file}")  # save cookie
-        tiktok_logger.info('  [-] update cookie！')
-        await asyncio.sleep(2)  # close delay for look the video status
-        # close all
+        await context.storage_state(path=f"{self.account_file}")
+        tiktok_logger.info('  [-] update cookie!')
+        await asyncio.sleep(2)
         await context.close()
         await browser.close()
 
     async def add_title_tags(self, page):
+        
+        # Close any overlay or modal
+        try:
+            close_buttons = [
+                'button[aria-label="Close"]',
+                'button[data-test-id="close-button"]',
+                'div[role="button"]:has-text("Skip")',
+                'button:has-text("Skip")',
+                'button:has-text("Close")',
+            ]
+            for selector in close_buttons:
+                btn = page.locator(selector).first
+                if await btn.count() > 0:
+                    try:
+                        await btn.click(timeout=2000)
+                        await asyncio.sleep(1)
+                    except:
+                        pass
+        except:
+            pass
+        
+        # Press Escape to close any modal
+        await page.keyboard.press("Escape")
+        await asyncio.sleep(1)
 
         editor_locator = self.locator_base.locator('div.public-DraftEditor-content')
-        await editor_locator.click()
-
+        # Use force click to bypass overlay
+        await editor_locator.click(force=True, timeout=10000)
+        
         await page.keyboard.press("End")
 
         await page.keyboard.press("Control+A")

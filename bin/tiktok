@@ -21,7 +21,7 @@ async def main():
     parser.add_argument('--title', required=True, help='Video title')
     parser.add_argument('--video', required=True, help='Path to video file')
     parser.add_argument('--tags', required=True, help='Comma-separated tags')
-    parser.add_argument('--account', default='~/.openclaw/credentials/tiktok/storage.json')
+    parser.add_argument('--account', default='credentials/tiktok/storage.json')
     parser.add_argument('--publish-date', default='0', help='Schedule date')
     
     args = parser.parse_args()
