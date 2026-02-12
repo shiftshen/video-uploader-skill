@@ -1,0 +1,27 @@
+# Logs
+*.log
+logs/
+
+# Credentials
+credentials/*/
+!credentials/*/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Temporary files
+*.tmp
+*.swp
