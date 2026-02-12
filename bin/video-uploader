@@ -76,7 +76,8 @@ async def upload_video(platform, title, video, tags, account, publish_date='0', 
             file_path=video,
             tags=[t.strip() for t in tags.split(',')],
             publish_date=kwargs.get('publish_date', 0),
-            account_file=account
+            account_file=account,
+            ai_generated=kwargs.get('ai_generated', False)  # AI 生成选项
         )
         await video_obj.main()
         
@@ -107,20 +108,20 @@ async def upload_video(platform, title, video, tags, account, publish_date='0', 
 async def login_platform(platform):
     """Open browser for manual login."""
     from douyin_uploader.main import douyin_cookie_gen
-    from ks_uploader.main import ks_cookie_gen
+    from ks_uploader.main import get_ks_cookie
     from tk_uploader.main import get_tiktok_cookie
-    from tencent_uploader.main import weixin_cookie_gen
+    from tencent_uploader.main import get_tencent_cookie
     
     account = get_default_account(platform)
     
     if platform == 'douyin':
         await douyin_cookie_gen(account)
     elif platform == 'kuaishou':
-        await ks_cookie_gen(account)
+        await get_ks_cookie(account)
     elif platform == 'tiktok':
         await get_tiktok_cookie(account)
     elif platform == 'tencent':
-        await weixin_cookie_gen(account)
+        await get_tencent_cookie(account)
     else:
         print(f"❌ Unknown platform: {platform}")
 
@@ -185,7 +186,7 @@ Examples:
     upload_parser.add_argument("--thumbnail", help="Thumbnail path (Douyin only)")
     upload_parser.add_argument("--product-link", help="Product link (Douyin only)")
     upload_parser.add_argument("--product-title", help="Product title (Douyin only)")
-    upload_parser.add_argument("--ai-generated", action="store_true", help="Mark as AI-generated content (Douyin only)")
+    upload_parser.add_argument("--ai-generated", action="store_true", help="Mark as AI-generated content (Douyin, TikTok)")
     upload_parser.add_argument("--category", help="Category (Tencent only)")
     
     # Login command
@@ -232,6 +233,7 @@ Examples:
             thumbnail=args.thumbnail,
             product_link=args.product_link,
             product_title=args.product_title,
+            ai_generated=args.ai_generated,
             category=args.category
         ))
         

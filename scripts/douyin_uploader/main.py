@@ -197,6 +197,10 @@ class DouYinVideo(object):
         # 检查是否存在包含输入框的元素
         # 这里为了避免页面变化，故使用相对位置定位：作品标题父级右侧第一个元素的input子元素
         await asyncio.sleep(1)
+        
+        # 关闭可能存在的弹窗
+        await self.close_popups(page)
+        douyin_logger.info('  [-] 已检查并关闭弹窗')
         douyin_logger.info(f'  [-] 正在填充标题和作品简介...')
         title_selectors = [
             "input.semi-input[placeholder*='作品标题']",
@@ -539,33 +543,168 @@ class DouYinVideo(object):
         await page.locator('div[role="listbox"] [role="option"]').first.click()
 
     async def set_ai_generated(self, page: Page):
-        """设置 AI 生成内容标记"""
-        ai_generated_selectors = [
-            'text=内容为AI生成',
-            'text=AI生成',
-            '[class*="ai-generated"]',
-            '[class*="ai_generated"]',
-            'input[type="checkbox"]',
-            '.semi-checkbox',
+        """设置 AI 生成内容标记 - 抖音创作者中心"""
+        if not self.ai_generated:
+            return True
+        
+        douyin_logger.info("  [-] 正在设置 AI 生成内容标记...")
+        
+        # 先关闭可能存在的弹窗
+        await self.close_popups(page)
+        
+        # 步骤1: 找到并点击"发文助手"
+        douyin_logger.info("  [-] 步骤1: 查找发文助手...")
+        fasong_selectors = [
+            'div:has-text("发文助手"):not(:has(div))',
+            'span:has-text("发文助手")',
+            'text=发文助手',
+            '[class*="assistant"]:has-text("发文")',
         ]
         
-        for selector in ai_generated_selectors:
+        fasong_clicked = False
+        for selector in fasong_selectors:
             try:
-                checkbox = page.locator(selector)
-                if await checkbox.count() > 0:
-                    # 检查是否已经选中
-                    is_checked = await checkbox.evaluate("el => el.checked || el.getAttribute('aria-checked') === 'true'")
-                    if not is_checked:
-                        await checkbox.click()
-                        douyin_logger.info("  [-]已勾选 AI 生成内容")
-                    else:
-                        douyin_logger.info("  [-]AI 生成内容已勾选")
-                    return True
-            except Exception as e:
+                elements = page.locator(selector)
+                count = await elements.count()
+                for i in range(count):
+                    element = elements.nth(i)
+                    if await element.is_visible():
+                        await element.click()
+                        douyin_logger.info(f"  [-] 已点击发文助手")
+                        fasong_clicked = True
+                        await asyncio.sleep(1)
+                        break
+                if fasong_clicked:
+                    break
+            except:
                 continue
         
-        douyin_logger.warning("  [-]未找到 AI 生成内容选项，可能页面结构已变化")
+        if not fasong_clicked:
+            douyin_logger.warning("  [-] 未找到发文助手，尝试其他方式...")
+        
+        # 步骤2: 找到并点击"自主声明"或"修改声明"
+        await asyncio.sleep(1)
+        douyin_logger.info("  [-] 步骤2: 查找自主声明...")
+        declare_selectors = [
+            'text=自主声明',
+            'text=修改声明',
+            'span:has-text("自主声明")',
+            'span:has-text("修改声明")',
+            'div:has-text("声明")',
+        ]
+        
+        declare_clicked = False
+        for selector in declare_selectors:
+            try:
+                element = page.locator(selector).first
+                if await element.count() > 0 and await element.is_visible():
+                    await element.click()
+                    douyin_logger.info(f"  [-] 已点击声明选项")
+                    declare_clicked = True
+                    await asyncio.sleep(1)
+                    break
+            except:
+                continue
+        
+        # 步骤3: 勾选"内容由AI生成"或类似选项
+        await asyncio.sleep(1)
+        douyin_logger.info("  [-] 步骤3: 勾选AI生成选项...")
+        ai_checkbox_selectors = [
+            # 包含"AI"文本的复选框
+            'label:has-text("AI") input[type="checkbox"]',
+            'div:has-text("AI生成") input',
+            'div:has-text("内容由AI生成") input',
+            'span:has-text("AI生成")',
+            'span:has-text("内容由AI生成")',
+            # 通过父级定位
+            'div:has-text("作者声明") input[type="checkbox"]',
+            'div:has-text("内容由") input[type="checkbox"]',
+            # 备选：包含"生成"的选项
+            'label:has-text("生成") input[type="checkbox"]',
+            # 新版选项
+            '[class*="ai"] input[type="checkbox"]',
+            '[class*="AI"] input[type="checkbox"]',
+        ]
+        
+        for selector in ai_checkbox_selectors:
+            try:
+                elements = page.locator(selector)
+                count = await elements.count()
+                for i in range(count):
+                    element = elements.nth(i)
+                    if await element.is_visible():
+                        # 检查是否已勾选
+                        is_checked = await element.evaluate('el => el.checked || el.getAttribute("aria-checked") === "true"')
+                        if not is_checked:
+                            await element.click()
+                            douyin_logger.info(f"  [-] 已勾选 AI 生成内容: {selector}")
+                            await asyncio.sleep(0.5)
+                            return True
+                        else:
+                            douyin_logger.info("  [-] AI 生成内容已勾选")
+                            return True
+            except:
+                continue
+        
+        # 尝试通过文本搜索所有复选框
+        try:
+            checkboxes = page.locator('input[type="checkbox"], div[role="checkbox"]')
+            count = await checkboxes.count()
+            for i in range(count):
+                try:
+                    checkbox = checkboxes.nth(i)
+                    parent = checkbox.locator('xpath=ancestor::div[1]')
+                    parent_text = await parent.inner_text()
+                    if 'AI' in parent_text or '生成' in parent_text or '声明' in parent_text:
+                        is_checked = await checkbox.evaluate('el => el.checked || el.getAttribute("aria-checked") === "true"')
+                        if not is_checked:
+                            await checkbox.click()
+                            douyin_logger.info("  [-] 已勾选 AI 生成内容 (通过文本搜索)")
+                            return True
+                except:
+                    continue
+        except:
+            pass
+        
+        douyin_logger.warning("  [-] 未找到 AI 生成内容选项，可能该账号无需此选项或页面结构已变化")
         return False
+
+    async def close_popups(self, page: Page):
+        """关闭可能存在的弹窗"""
+        close_selectors = [
+            # 关闭按钮
+            'button[aria-label="关闭"]',
+            'button[aria-label="Close"]',
+            'button:has-text("关闭")',
+            'button:has-text("Close")',
+            'button:has-text("取消")',
+            'button:has-text("Cancel")',
+            'button:has-text("知道了")',
+            'button:has-text("确定")',
+            'button:has-text("确定")',
+            # 关闭图标
+            'div[class*="close"]',
+            'span[class*="close"]',
+            '[class*="modal-close"]',
+            '[class*="dialog-close"]',
+            # 遮罩层
+            'div[class*="mask"]',
+            'div[class*="overlay"]',
+        ]
+        
+        for selector in close_selectors:
+            try:
+                element = page.locator(selector).first
+                if await element.count() > 0 and await element.is_visible():
+                    await element.click(timeout=1000)
+                    douyin_logger.info(f"  [-] 已关闭弹窗: {selector}")
+                    await asyncio.sleep(0.5)
+            except:
+                pass
+        
+        # 按 ESC 键关闭弹窗
+        await page.keyboard.press("Escape")
+        await asyncio.sleep(0.3)
 
     async def handle_product_dialog(self, page: Page, product_title: str):
         """处理商品编辑弹窗"""

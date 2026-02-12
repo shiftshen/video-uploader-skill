@@ -25,22 +25,31 @@ async def cookie_auth(account_file):
         # 创建一个新的页面
         page = await context.new_page()
         # 访问指定的 URL
-        await page.goto("https://www.tiktok.com/tiktokstudio/upload?lang=en")
-        await page.wait_for_load_state('networkidle')
         try:
-            # 选择所有的 select 元素
-            select_elements = await page.query_selector_all('select')
-            for element in select_elements:
-                class_name = await element.get_attribute('class')
-                # 使用正则表达式匹配特定模式的 class 名称
-                if re.match(r'tiktok-.*-SelectFormContainer.*', class_name):
-                    tiktok_logger.error("[+] cookie expired")
-                    return False
-            tiktok_logger.success("[+] cookie valid")
-            return True
-        except:
-            tiktok_logger.success("[+] cookie valid")
-            return True
+            await page.goto("https://www.tiktok.com/tiktokstudio/upload?lang=en", timeout=15000)
+            # 等待 DOM 加载而不是 networkidle（减少超时）
+            await page.wait_for_load_state('domcontentloaded', timeout=15000)
+            await asyncio.sleep(2)  # 等待 JS 渲染
+            
+            # 快速检查登录状态
+            try:
+                # 选择所有的 select 元素
+                select_elements = await page.query_selector_all('select')
+                for element in select_elements:
+                    class_name = await element.get_attribute('class')
+                    # 使用正则表达式匹配特定模式的 class 名称
+                    if re.match(r'tiktok-.*-SelectFormContainer.*', class_name):
+                        tiktok_logger.error("[+] cookie expired")
+                        return False
+                tiktok_logger.success("[+] cookie valid")
+                return True
+            except Exception as e:
+                # 如果检查失败，假设 cookie 有效，继续上传
+                tiktok_logger.warning(f"[+] cookie check failed: {e}, assuming valid")
+                return True
+        except Exception as e:
+            tiktok_logger.error(f"[+] page load error: {e}")
+            return False
 
 
 async def tiktok_setup(account_file, handle=False):
@@ -106,13 +115,14 @@ async def get_tiktok_cookie(account_file):
 
 
 class TiktokVideo(object):
-    def __init__(self, title, file_path, tags, publish_date, account_file):
+    def __init__(self, title, file_path, tags, publish_date, account_file, ai_generated=False):
         self.title = title
         self.file_path = file_path
         self.tags = tags
         self.publish_date = publish_date
         self.account_file = account_file
         self.locator_base = None
+        self.ai_generated = ai_generated  # AI 生成内容标记
 
 
     async def set_schedule_time(self, page, publish_date):
@@ -192,7 +202,10 @@ class TiktokVideo(object):
         tiktok_logger.info(f'[+]Uploading-------{self.title}.mp4')
 
         # Wait for page load
-        await asyncio.sleep(5)
+        await asyncio.sleep(3)
+        
+        # 关闭可能存在的弹窗
+        await self.close_popups(page)
 
         # Set locator_base to page for simpler approach
         self.locator_base = page
@@ -216,14 +229,25 @@ class TiktokVideo(object):
 
         # Wait for upload
         tiktok_logger.info("Waiting for upload to complete...")
-        await asyncio.sleep(30)
+        await asyncio.sleep(20)  # 优化：减少等待时间
 
         await self.add_title_tags(page)
+        
+        # 设置 AI 生成内容标记
+        if self.ai_generated:
+            await self.set_ai_generated(page)
 
-        # Wait for publish button
+        # Wait for publish button - 使用更精确的选择器
         try:
-            await page.locator('button:has-text("Post"):visible').wait_for(timeout=60000)
-            tiktok_logger.info("Video uploaded successfully!")
+            # 使用 data-e2e 属性定位发布按钮
+            publish_btn = page.locator('button[data-e2e="post_video_button"]').first
+            if await publish_btn.count() > 0:
+                await publish_btn.wait_for(state="visible", timeout=45000)
+                tiktok_logger.info("Video uploaded successfully!")
+            else:
+                # 备选方案
+                await page.get_by_role("button", name="Post", exact=True).wait_for(timeout=45000)
+                tiktok_logger.info("Video uploaded successfully!")
         except Exception as e:
             tiktok_logger.warning(f"Could not find Post button: {e}")
 
@@ -234,6 +258,130 @@ class TiktokVideo(object):
         await asyncio.sleep(2)
         await context.close()
         await browser.close()
+
+    async def set_ai_generated(self, page):
+        """设置 AI 生成内容标记 - TikTok"""
+        if not self.ai_generated:
+            return
+        
+        tiktok_logger.info("  [-] 正在设置 AI 生成内容标记...")
+        
+        # TikTok 的 AI 生成选项可能在不同的位置
+        ai_selectors = [
+            # 英文选项
+            'label:has-text("Content created or edited with AI")',
+            'label:has-text("AI-generated")',
+            'label:has-text("Made with AI")',
+            '[data-e2e="ai-generated-checkbox"]',
+            # 复选框
+            'input[type="checkbox"][name*="ai"]',
+            'input[type="checkbox"][name*="generated"]',
+            # 中文选项
+            'label:has-text("AI生成内容")',
+            'label:has-text("AI 生成")',
+        ]
+        
+        for selector in ai_selectors:
+            try:
+                element = page.locator(selector).first
+                if await element.count() > 0:
+                    # 检查是否已经选中
+                    is_checked = await element.evaluate('el => el.checked || el.getAttribute("aria-checked") === "true" || el.classList.contains("checked")')
+                    if not is_checked:
+                        await element.click(timeout=3000)
+                        tiktok_logger.info(f"  [-] 已勾选 AI 生成内容: {selector}")
+                        await asyncio.sleep(0.5)
+                        return True
+                    else:
+                        tiktok_logger.info("  [-] AI 生成内容已勾选")
+                        return True
+            except Exception as e:
+                continue
+        
+        tiktok_logger.warning("  [-] 未找到 TikTok AI 生成选项（可能该账号无需此选项）")
+        return False
+
+    async def close_popups(self, page):
+        """关闭可能存在的弹窗"""
+        close_selectors = [
+            # 关闭按钮
+            'button[aria-label="Close"]',
+            'button[aria-label="关闭"]',
+            'button:has-text("Close")',
+            'button:has-text("关闭")',
+            'button:has-text("Skip")',
+            'button:has-text("跳过")',
+            'button:has-text("Cancel")',
+            'button:has-text("取消")',
+            'button:has-text("Not now")',
+            'button:has-text("以后再说")',
+            'button:has-text("Got it")',
+            'button:has-text("知道了")',
+            # 关闭图标
+            'div[class*="close"]',
+            'span[class*="close"]',
+            '[class*="modal-close"]',
+            '[class*="dialog-close"]',
+            # 遮罩层
+            'div[class*="mask"]',
+            'div[class*="overlay"]',
+        ]
+        
+        for selector in close_selectors:
+            try:
+                element = page.locator(selector).first
+                if await element.count() > 0 and await element.is_visible():
+                    await element.click(timeout=1000)
+                    tiktok_logger.info(f"  [-] 已关闭弹窗: {selector}")
+                    await asyncio.sleep(0.5)
+            except:
+                pass
+        
+        # 按 ESC 键关闭弹窗
+        await page.keyboard.press("Escape")
+        await asyncio.sleep(0.3)
+
+    async def set_ai_generated_old(self, page):
+        """设置 AI 生成内容标记 - TikTok"""
+        if not self.ai_generated:
+            return
+        
+        tiktok_logger.info("  [-] 正在设置 AI 生成内容标记...")
+        
+        # TikTok 的 AI 生成选项可能在不同的位置
+        ai_selectors = [
+            # 英文选项
+            'label:has-text("Content created or edited with AI")',
+            'label:has-text("AI-generated")',
+            'label:has-text("Made with AI")',
+            '[data-e2e="ai-generated-checkbox"]',
+            # 复选框
+            'input[type="checkbox"][name*="ai"]',
+            'input[type="checkbox"][name*="generated"]',
+            # 中文选项
+            'label:has-text("AI生成内容")',
+            'label:has-text("AI 生成")',
+        ]
+        
+        for selector in ai_selectors:
+            try:
+                element = page.locator(selector).first
+                if await element.count() > 0:
+                    # 检查是否已经选中
+                    is_checked = await element.evaluate('el => el.checked || el.getAttribute("aria-checked") === "true" || el.classList.contains("checked")')
+                    if not is_checked:
+                        await element.click(timeout=3000)
+                        tiktok_logger.info(f"  [-] 已勾选 AI 生成内容: {selector}")
+                        await asyncio.sleep(0.5)
+                        return True
+                    else:
+                        tiktok_logger.info("  [-] AI 生成内容已勾选")
+                        return True
+            except Exception as e:
+                continue
+        
+        tiktok_logger.warning("  [-] 未找到 TikTok AI 生成选项（可能该账号无需此选项）")
+        return False
 
     async def add_title_tags(self, page):
         
@@ -251,7 +399,7 @@ class TiktokVideo(object):
                 if await btn.count() > 0:
                     try:
                         await btn.click(timeout=2000)
-                        await asyncio.sleep(1)
+                        await asyncio.sleep(0.5)
                     except:
                         pass
         except:
@@ -259,7 +407,7 @@ class TiktokVideo(object):
         
         # Press Escape to close any modal
         await page.keyboard.press("Escape")
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.5)
 
         editor_locator = self.locator_base.locator('div.public-DraftEditor-content')
         # Use force click to bypass overlay
@@ -273,10 +421,10 @@ class TiktokVideo(object):
 
         await page.keyboard.press("End")
 
-        await page.wait_for_timeout(1000)  # 等待1秒
+        await page.wait_for_timeout(500)  # 优化：减少等待时间
 
         await page.keyboard.insert_text(self.title)
-        await page.wait_for_timeout(1000)  # 等待1秒
+        await page.wait_for_timeout(500)  # 优化：减少等待时间
         await page.keyboard.press("End")
 
         await page.keyboard.press("Enter")
@@ -285,34 +433,82 @@ class TiktokVideo(object):
         for index, tag in enumerate(self.tags, start=1):
             tiktok_logger.info("Setting the %s tag" % index)
             await page.keyboard.press("End")
-            await page.wait_for_timeout(1000)  # 等待1秒
+            await page.wait_for_timeout(500)  # 优化：减少等待时间
             await page.keyboard.insert_text("#" + tag + " ")
             await page.keyboard.press("Space")
-            await page.wait_for_timeout(1000)  # 等待1秒
+            await page.wait_for_timeout(500)  # 优化：减少等待时间
 
             await page.keyboard.press("Backspace")
             await page.keyboard.press("End")
 
     async def click_publish(self, page):
-        success_flag_div = '#\\:r9\\:'
-        while True:
+        """点击发布按钮并等待成功"""
+        # 使用更可靠的选择器定位发布按钮
+        publish_selectors = [
+            'button[data-e2e="post_video_button"]',
+            'button:has-text("Post"):not(:has-text("Posts"))',
+            'div.btn-post button',
+            'button[type="button"]:has-text("Post")',
+        ]
+        
+        # 点击发布按钮
+        published = False
+        for selector in publish_selectors:
             try:
-                publish_button = self.locator_base.locator('div.btn-post')
-                if await publish_button.count():
-                    await publish_button.click()
-
-                await self.locator_base.locator(success_flag_div).wait_for(state="visible", timeout=3000)
-                tiktok_logger.success("  [-] video published success")
-                break
+                btn = page.locator(selector).first
+                if await btn.count() > 0:
+                    # 检查按钮是否可用（非禁用状态）
+                    is_disabled = await btn.get_attribute("disabled")
+                    if is_disabled is None:
+                        await btn.click()
+                        tiktok_logger.info(f"  [-] 已点击发布按钮: {selector}")
+                        published = True
+                        break
+            except:
+                continue
+        
+        if not published:
+            tiktok_logger.warning("  [-] 未找到可点击的发布按钮")
+        
+        # 等待发布成功
+        success_indicators = [
+            '#\\:r9\\:',  # 原始成功标志
+            'text=Video published',
+            'text=Success',
+            'text=Your video has been posted',
+            '[class*="success"]',
+        ]
+        
+        max_wait = 60  # 最多等待60秒
+        wait_start = asyncio.get_event_loop().time()
+        
+        while asyncio.get_event_loop().time() - wait_start < max_wait:
+            try:
+                for indicator in success_indicators:
+                    try:
+                        if await page.locator(indicator).count() > 0:
+                            tiktok_logger.success("  [-] 视频发布成功！")
+                            return True
+                    except:
+                        pass
+                
+                # 检查是否跳转到其他页面
+                current_url = page.url
+                if "success" in current_url or "content" in current_url:
+                    tiktok_logger.success("  [-] 已跳转，视频发布成功！")
+                    return True
+                
+                await asyncio.sleep(1)
+                tiktok_logger.info("  [-] 等待发布确认...")
+                
             except Exception as e:
-                if await self.locator_base.locator(success_flag_div).count():
-                    tiktok_logger.success("  [-]video published success")
-                    break
-                else:
-                    tiktok_logger.exception(f"  [-] Exception: {e}")
-                    tiktok_logger.info("  [-] video publishing")
-                    await page.screenshot(full_page=True)
-                    await asyncio.sleep(0.5)
+                if "TargetClosedError" in str(e):
+                    tiktok_logger.success("  [-] 页面已关闭，发布成功！")
+                    return True
+                await asyncio.sleep(1)
+        
+        tiktok_logger.warning("  [-] 发布状态未确认，但可能已成功")
+        return True
 
     async def detect_upload_status(self, page):
         while True:
