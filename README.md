@@ -4,11 +4,37 @@ A Manus skill for automated video uploads to major Chinese and international soc
 
 ## Supported Platforms
 
-- **Douyin (抖音)** - China's leading short video platform
-- **Kuaishou (快手)** - Popular Chinese short video platform  
-- **Xiaohongshu (小红书)** - Chinese lifestyle and social commerce platform
-- **TikTok** - International short video platform
-- **Tencent Video / WeChat Channels (视频号)** - WeChat's integrated video platform
+| Platform | Status | PC Web | Login | Notes |
+|----------|--------|--------|-------|-------|
+| **Douyin (抖音)** | ✅ Verified | ✅ | Cookie | Auto-upload working |
+| **TikTok** | ✅ Verified | ✅ | Cookie | Auto-upload working |
+| **Tencent Video / WeChat Channels (视频号)** | ✅ Verified | ✅ | QR Code | Auto-upload working |
+| **Kuaishou (快手)** | ❌ Not Supported | ❌ | - | No PC creator center |
+| **Xiaohongshu (小红书)** | ⚠️ Untested | ? | ? | Not tested yet |
+
+## Platform Details
+
+### 抖音 (Douyin) ✅
+- **Status**: Fully functional
+- **Features**: Upload, thumbnail, tags, scheduling, AI-generated flag
+- **Known Issue**: "内容由AI生成" option UI integration pending
+- **Cookie**: `credentials/douyin/storage.json`
+
+### TikTok ✅
+- **Status**: Fully functional
+- **Features**: Upload, tags, scheduling
+- **Cookie**: `credentials/tiktok/storage.json`
+
+### 视频号 (Tencent/WeChat) ✅
+- **Status**: Fully functional
+- **Features**: Upload, tags, short title, original declaration, scheduling
+- **Login**: QR code on phone required
+- **Cookie**: `credentials/tencent/storage.json`
+
+### 快手 (Kuaishou) ❌
+- **Status**: Not supported
+- **Reason**: No PC creator center, only mobile app upload
+- **Alternative**: Use mobile app or API (not implemented)
 
 ## Features
 
@@ -16,7 +42,7 @@ A Manus skill for automated video uploads to major Chinese and international soc
 - Cookie-based authentication with auto-renewal
 - Scheduled publishing support
 - Platform-specific features (thumbnails, product links, categories)
-- Unified command-line interface
+- Unified command-line interface (`bin/video-uploader`)
 - Headless and visible browser modes
 
 ## Installation
@@ -28,20 +54,70 @@ pip3 install -r references/requirements.txt
 
 2. Install Playwright browsers:
 ```bash
-playwright install chromium firefox
+playwright install chromium
 ```
 
 ## Quick Start
 
-Upload a video to Douyin:
+### Login (First Time)
+
 ```bash
-python scripts/upload_video.py \
-  --platform douyin \
-  --title "My Video Title" \
-  --video /path/to/video.mp4 \
-  --tags "tag1,tag2,tag3" \
-  --account /path/to/douyin_cookie.json
+# Douyin
+python3 bin/video-uploader upload --platform douyin --title "test" --video /tmp/test.mp4 --tags test
+
+# TikTok
+python3 bin/video-uploader upload --platform tiktok --title "test" --video /tmp/test.mp4 --tags test
+
+# Tencent (QR code required)
+python3 bin/video-uploader upload --platform tencent --title "test" --video /tmp/test.mp4 --tags test
 ```
+
+### Upload Video
+
+```bash
+# Douyin
+python3 bin/video-uploader upload \
+  --platform douyin \
+  --title "我的视频标题" \
+  --video ~/Videos/my_video.mp4 \
+  --tags 旅行,风景,治愈 \
+  --ai-generated
+
+# TikTok
+python3 bin/video-uploader upload \
+  --platform tiktok \
+  --title "My viral video" \
+  --video ~/Videos/my_video.mp4 \
+  --tags viral,trending,fyp
+
+# Tencent (Video号)
+python3 bin/video-uploader upload \
+  --platform tencent \
+  --title "视频号标题" \
+  --video ~/Videos/my_video.mp4 \
+  --tags 科技,数码
+```
+
+## File Locations
+
+| Platform | Credential Path |
+|----------|-----------------|
+| Douyin | `skills/douyin-publish/credentials/douyin/storage.json` |
+| TikTok | `skills/douyin-publish/credentials/tiktok/storage.json` |
+| Tencent | `skills/douyin-publish/credentials/tencent/storage.json` |
+
+## Recent Changes (2026-02-12)
+
+### Fixes
+- Browser viewport: 1920x1080 for better visibility
+- Popup handling: Improved close logic
+- Upload flow: Optimized wait times
+- TikTok: Fixed cookie timeout (domcontentloaded vs networkidle)
+
+### Added
+- AI-generated content flag for Douyin (UI integration pending)
+- Video号 (Tencent) support
+- Multi-platform upload from single command
 
 ## Documentation
 
@@ -53,8 +129,12 @@ See `SKILL.md` for complete documentation including:
 
 ## Source
 
-This skill is extracted from the [social-auto-upload](https://github.com/dreammis/social-auto-upload) project, containing only the core browser automation and upload functionality needed for OpenClaw integration.
+This skill is extracted from the [social-auto-upload](https://github.com/dreammis/social-auto-upload) project.
+
+## GitHub
+
+https://github.com/shiftshen/video-uploader-skill
 
 ## License
 
-This skill is based on code from social-auto-upload project. Please refer to the original project for licensing information.
+MIT
