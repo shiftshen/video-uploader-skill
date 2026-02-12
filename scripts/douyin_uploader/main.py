@@ -113,7 +113,7 @@ async def douyin_cookie_gen(account_file):
 
 
 class DouYinVideo(object):
-    def __init__(self, title, file_path, tags, publish_date: datetime, account_file, thumbnail_path=None, productLink='', productTitle=''):
+    def __init__(self, title, file_path, tags, publish_date: datetime, account_file, thumbnail_path=None, productLink='', productTitle='', ai_generated=False):
         self.title = title  # 视频标题
         self.file_path = file_path
         self.tags = tags
@@ -124,6 +124,7 @@ class DouYinVideo(object):
         self.thumbnail_path = thumbnail_path
         self.productLink = productLink
         self.productTitle = productTitle
+        self.ai_generated = ai_generated  # AI 生成内容标记
 
     async def set_schedule_time_douyin(self, page, publish_date):
         # 选择包含特定文本内容的 label 元素
@@ -252,14 +253,14 @@ class DouYinVideo(object):
                     break
                 else:
                     douyin_logger.info("  [-] 正在上传视频中...")
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(1)  # 优化：减少等待时间
 
                     if await page.locator('div.progress-div > div:has-text("上传失败")').count():
                         douyin_logger.error("  [-] 发现上传出错了... 准备重试")
                         await self.handle_upload_error(page)
             except:
                 douyin_logger.info("  [-] 正在上传视频中...")
-                await asyncio.sleep(2)
+                await asyncio.sleep(1)
 
         if self.productLink and self.productTitle:
             douyin_logger.info(f'  [-] 正在设置商品链接...')
@@ -272,6 +273,10 @@ class DouYinVideo(object):
 
         # 更换可见元素
         await self.set_location(page, "")
+
+        # 设置 AI 生成内容标记
+        if self.ai_generated:
+            await self.set_ai_generated(page)
 
 
         # 頭條/西瓜
@@ -309,7 +314,7 @@ class DouYinVideo(object):
                             await publish_button.click()
                             publish_clicked = True
                             douyin_logger.info("  [-]已点击发布按钮，等待处理...")
-                            await asyncio.sleep(3)  # 等待发布处理
+                            await asyncio.sleep(1)  # 优化：减少等待时间
                 
                 # 尝试检测成功标志
                 success_selectors = [
@@ -377,7 +382,7 @@ class DouYinVideo(object):
             douyin_logger.info('  [-] 未提供封面，自动截取视频帧...')
             
             # 等待视频加载并播放
-            await page.wait_for_timeout(3000)
+            await page.wait_for_timeout(1500)
             
             # 查找视频播放器
             video_element = page.locator("video").first
@@ -420,7 +425,7 @@ class DouYinVideo(object):
             
             # 上传竖版封面
             await page.locator("div[class^='semi-upload upload'] >> input.semi-upload-hidden-input").set_input_files(thumbnail_path)
-            await asyncio.sleep(2)  # 等待上传
+            await asyncio.sleep(1)  # 优化：减少等待时间
             
             # 点击完成按钮（竖版设置）
             完成_btn = page.locator("div#tooltip-container button:visible:has-text('完成')")
@@ -453,7 +458,7 @@ class DouYinVideo(object):
             
             # 上传横版封面
             await page.locator("div[class^='semi-upload upload'] >> input.semi-upload-hidden-input").set_input_files(thumbnail_path)
-            await asyncio.sleep(2)  # 等待上传
+            await asyncio.sleep(1)  # 优化：减少等待时间
             
             # 点击完成按钮（横版设置）
             完成_btn = page.locator("div#tooltip-container button:visible:has-text('完成')")
@@ -528,15 +533,44 @@ class DouYinVideo(object):
         #     "div.semi-select-single").nth(0).click()
         await page.locator('div.semi-select span:has-text("输入地理位置")').click()
         await page.keyboard.press("Backspace")
-        await page.wait_for_timeout(2000)
+        await page.wait_for_timeout(1000)
         await page.keyboard.type(location)
         await page.wait_for_selector('div[role="listbox"] [role="option"]', timeout=5000)
         await page.locator('div[role="listbox"] [role="option"]').first.click()
 
+    async def set_ai_generated(self, page: Page):
+        """设置 AI 生成内容标记"""
+        ai_generated_selectors = [
+            'text=内容为AI生成',
+            'text=AI生成',
+            '[class*="ai-generated"]',
+            '[class*="ai_generated"]',
+            'input[type="checkbox"]',
+            '.semi-checkbox',
+        ]
+        
+        for selector in ai_generated_selectors:
+            try:
+                checkbox = page.locator(selector)
+                if await checkbox.count() > 0:
+                    # 检查是否已经选中
+                    is_checked = await checkbox.evaluate("el => el.checked || el.getAttribute('aria-checked') === 'true'")
+                    if not is_checked:
+                        await checkbox.click()
+                        douyin_logger.info("  [-]已勾选 AI 生成内容")
+                    else:
+                        douyin_logger.info("  [-]AI 生成内容已勾选")
+                    return True
+            except Exception as e:
+                continue
+        
+        douyin_logger.warning("  [-]未找到 AI 生成内容选项，可能页面结构已变化")
+        return False
+
     async def handle_product_dialog(self, page: Page, product_title: str):
         """处理商品编辑弹窗"""
 
-        await page.wait_for_timeout(2000)
+        await page.wait_for_timeout(1000)
         await page.wait_for_selector('input[placeholder="请输入商品短标题"]', timeout=10000)
         short_title_input = page.locator('input[placeholder="请输入商品短标题"]')
         if not await short_title_input.count():
@@ -571,7 +605,7 @@ class DouYinVideo(object):
         
     async def set_product_link(self, page: Page, product_link: str, product_title: str):
         """设置商品链接功能"""
-        await page.wait_for_timeout(2000)  # 等待2秒
+        await page.wait_for_timeout(1000)  # 优化：减少等待时间
         try:
             # 定位"添加标签"文本，然后向上导航到容器，再找到下拉框
             await page.wait_for_selector('text=添加标签', timeout=10000)
@@ -605,7 +639,7 @@ class DouYinVideo(object):
             await add_button.click()
             douyin_logger.debug("[+] 成功点击'添加链接'按钮")
             ## 如果链接不可用
-            await page.wait_for_timeout(2000)
+            await page.wait_for_timeout(1000)
             error_modal = page.locator('text=未搜索到对应商品')
             if await error_modal.count():
                 confirm_button = page.locator('button:has-text("确定")')

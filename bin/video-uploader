@@ -45,7 +45,8 @@ async def upload_video(platform, title, video, tags, account, publish_date='0', 
             account_file=account,
             thumbnail_path=kwargs.get('thumbnail'),
             productLink=kwargs.get('product_link', ''),
-            productTitle=kwargs.get('product_title', '')
+            productTitle=kwargs.get('product_title', ''),
+            ai_generated=kwargs.get('ai_generated', False)  # AI 生成选项
         )
         await video_obj.main()
         
@@ -184,6 +185,7 @@ Examples:
     upload_parser.add_argument("--thumbnail", help="Thumbnail path (Douyin only)")
     upload_parser.add_argument("--product-link", help="Product link (Douyin only)")
     upload_parser.add_argument("--product-title", help="Product title (Douyin only)")
+    upload_parser.add_argument("--ai-generated", action="store_true", help="Mark as AI-generated content (Douyin only)")
     upload_parser.add_argument("--category", help="Category (Tencent only)")
     
     # Login command
