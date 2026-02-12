@@ -152,12 +152,14 @@ class DouYinVideo(object):
             browser = await playwright.chromium.launch(
                 headless=False, 
                 channel="chrome", 
-                executable_path=self.local_executable_path
+                executable_path=self.local_executable_path,
+                viewport={"width": 1920, "height": 1080}  # 放大窗口
             )
         else:
             browser = await playwright.chromium.launch(
                 headless=False, 
-                channel="chrome"
+                channel="chrome",
+                viewport={"width": 1920, "height": 1080}  # 放大窗口
             )
         # 创建一个浏览器上下文，使用指定的 cookie 文件
         context = await browser.new_context(
@@ -165,8 +167,7 @@ class DouYinVideo(object):
         locale="en-US",
         user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
-        bypass_csp=True,
-        viewport={"width": 1920, "height": 1080}  # 放大窗口
+        bypass_csp=True
     )
         context = await set_init_script(context)
 
@@ -214,12 +215,24 @@ class DouYinVideo(object):
         # 这里为了避免页面变化，故使用相对位置定位：作品标题父级右侧第一个元素的input子元素
         await asyncio.sleep(1)
         
-        # 关闭可能存在的弹窗 - 只关闭一次，避免重复点击
+        # 关闭可能存在的弹窗
         await self.close_popups(page)
         douyin_logger.info('  [-] 已检查并关闭弹窗')
         
-        # 等待页面稳定
+        # 等待页面稳定 - 增加等待时间
         await asyncio.sleep(3)
+        
+        # 再次关闭弹窗（可能有多层）
+        await self.close_popups(page)
+        await asyncio.sleep(2)
+        
+        # 等待编辑区域出现
+        douyin_logger.info('  [-] 等待编辑区域加载...')
+        try:
+            await page.wait_for_selector('[contenteditable="true"], input.semi-input', timeout=10000)
+            douyin_logger.info('  [-] 编辑区域已加载')
+        except:
+            douyin_logger.warning('  [-] 等待编辑区域超时')
         
         # 调试：截图查看当前页面状态
         try:
@@ -613,133 +626,74 @@ class DouYinVideo(object):
         # 先关闭可能存在的弹窗
         await self.close_popups(page)
         
-        # 步骤0: 滚动到页面底部，确保能看到"发文助手"区域
-        douyin_logger.info("  [-] 步骤0: 滚动到页面底部...")
-        await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
-        await asyncio.sleep(2)  # 等待页面滚动完成
+        # 步骤1: 滚动到页面下方，找到"发文助手"区域
+        douyin_logger.info("  [-] 步骤1: 滚动到视频下方...")
+        await page.evaluate('window.scrollBy(0, 300)')
+        await asyncio.sleep(1)
         
-        # 步骤1: 找到"发文助手"或"添加声明"区域
-        douyin_logger.info("  [-] 步骤1: 查找'添加声明'按钮...")
+        # 步骤2: 找到"发文助手"下面的"添加声明"
+        douyin_logger.info("  [-] 步骤2: 查找'添加声明'按钮...")
         
-        # 直接尝试点击"添加声明"
-        添加声明_clicked = False
-        
-        # 先尝试直接找"添加声明"按钮（最直接的方式）
+        # 方法1: 先找"发文助手"文本，然后在附近找"添加声明"
         添加声明_selectors = [
-            'button:has-text("添加声明")',
+            'text=添加声明',
             'span:has-text("添加声明")',
             'div:has-text("添加声明")',
+            'button:has-text("添加声明")',
+            # 可能是在某个容器里
+            'div[class*="assistant"] span:has-text("添加声明")',
+            'div[class*="declaration"] span:has-text("添加声明")',
         ]
         
+        添加声明_clicked = False
         for selector in 添加声明_selectors:
             try:
                 elements = page.locator(selector)
                 count = await elements.count()
                 for i in range(count):
                     element = elements.nth(i)
-                    if await element.is_visible(timeout=2000):
-                        # 检查这个元素是否是我们要点击的
-                        text = await element.inner_text()
-                        if '添加声明' in text:
-                            await element.click()
-                            douyin_logger.info(f"  [-] 已直接点击'添加声明': {selector}")
-                            添加声明_clicked = True
-                            await asyncio.sleep(1.5)  # 等待右侧面板滑出
-                            break
+                    if await element.is_visible():
+                        await element.click()
+                        douyin_logger.info(f"  [-] 已点击'添加声明': {selector}")
+                        添加声明_clicked = True
+                        await asyncio.sleep(1)
+                        break
                 if 添加声明_clicked:
                     break
             except:
                 continue
         
-        # 如果没找到，尝试找"发文助手"再找"添加声明"
         if not 添加声明_clicked:
+            # 方法2: 找"发文助手"然后在同一行或下方找按钮
             try:
-                # 找"发文助手"
                 发文助手 = page.locator('text=发文助手').first
                 if await 发文助手.count() > 0:
                     # 滚动到发文助手位置
                     await 发文助手.scroll_into_view_if_needed()
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(0.5)
                     
-                    # 在发文助手附近找"添加声明"
+                    # 在发文助手的父级或兄弟元素中找"添加声明"
                     for _ in range(3):
-                        nearby = page.locator('text=添加声明')
-                        if await nearby.count() > 0:
-                            for i in range(await nearby.count()):
-                                el = nearby.nth(i)
-                                if await el.is_visible():
-                                    await el.click()
-                                    douyin_logger.info("  [-] 已通过'发文助手'附近找到'添加声明'")
-                                    添加声明_clicked = True
-                                    await asyncio.sleep(1.5)
-                                    break
-                        if 添加声明_clicked:
+                        发文助手 = page.locator('text=发文助手').first
+                        parent = 发文助手.locator('xpath=..')
+                        sibling_buttons = parent.locator('span:has-text("添加声明"), button:has-text("添加声明"), text=添加声明')
+                        if await sibling_buttons.count() > 0:
+                            await sibling_buttons.first.click()
+                            douyin_logger.info("  [-] 已通过'发文助手'找到并点击'添加声明'")
+                            添加声明_clicked = True
                             break
-                        await asyncio.sleep(0.5)
+                        # 向上找一级父元素
+                        parent = parent.locator('xpath=..')
             except Exception as e:
-                douyin_logger.warning(f"  [-] 查找'添加声明'失败: {e}")
+                douyin_logger.warning(f"  [-] 通过'发文助手'查找失败: {e}")
         
         if not 添加声明_clicked:
             douyin_logger.warning("  [-] 未找到'添加声明'按钮")
             return False
         
-        # 步骤2: 右侧面板滑出后，选择"内容由AI生成" - 增加等待时间
-        douyin_logger.info("  [-] 步骤2: 等待右侧面板滑出...")
-        await asyncio.sleep(2)  # 增加等待时间让面板完全滑出
-        
-        # 调试：截图查看右侧面板内容
-        try:
-            debug_path = f"/tmp/douyin_ai_panel_{int(asyncio.get_event_loop().time())}.png"
-            await page.screenshot(path=debug_path, full_page=False)
-            douyin_logger.info(f"  [-] AI面板调试截图: {debug_path}")
-        except:
-            pass
-        
-        douyin_logger.info("  [-] 步骤2: 在右侧面板选择'内容由AI生成'...")
-        
-        # 调试：获取页面上所有包含AI或生成的可见文本
-        try:
-            all_text = await page.locator('body').inner_text()
-            ai_related = [line for line in all_text.split('\n') if 'AI' in line or '生成' in line or '声明' in line]
-            douyin_logger.info(f"  [-] 页面上AI相关文本: {ai_related[:10]}")
-        except:
-            pass
-        
-        # 尝试先点击"自主声明"展开选项
-        try:
-            自主声明 = page.locator('text=自主声明').first
-            if await 自主声明.count() > 0:
-                douyin_logger.info("  [-] 找到'自主声明'，尝试点击...")
-                await 自主声明.click()
-                await asyncio.sleep(1)
-                
-                # 再次获取页面文本
-                all_text2 = await page.locator('body').inner_text()
-                ai_related2 = [line for line in all_text2.split('\n') if 'AI' in line or '生成' in line]
-                douyin_logger.info(f"  [-] 点击自主声明后AI相关文本: {ai_related2[:10]}")
-        except Exception as e:
-            douyin_logger.info(f"  [-] 点击'自主声明'失败: {e}")
-        
-        # 调试：获取所有可见的复选框
-        try:
-            all_checkboxes = page.locator('input[type="checkbox"]:visible')
-            cb_count = await all_checkboxes.count()
-            douyin_logger.info(f"  [-] 页面上可见复选框数量: {cb_count}")
-            for i in range(min(cb_count, 10)):
-                cb = all_checkboxes.nth(i)
-                parent = cb.locator('xpath=..')
-                parent_text = await parent.inner_text()
-                douyin_logger.info(f"  [-] 复选框{i}父级文本: {parent_text[:50] if parent_text else '(空)'}")
-                # 检查是否是AI相关的复选框
-                if 'AI' in parent_text or '生成' in parent_text:
-                    is_checked = await cb.evaluate('el => el.checked')
-                    if not is_checked:
-                        await cb.click()
-                        douyin_logger.info(f"  [-] 已勾选AI相关复选框: {parent_text}")
-                        AI选项_clicked = True
-                        break
-        except:
-            pass
+        # 步骤3: 右侧滑出面板，选择"内容由AI生成"
+        await asyncio.sleep(1)
+        douyin_logger.info("  [-] 步骤3: 在右侧面板选择'内容由AI生成'...")
         
         AI选项_selectors = [
             'text=内容由AI生成',
@@ -757,12 +711,9 @@ class DouYinVideo(object):
             try:
                 elements = page.locator(selector)
                 count = await elements.count()
-                douyin_logger.info(f"  [-] 选择器 '{selector}': 找到 {count} 个元素")
                 for i in range(count):
                     element = elements.nth(i)
-                    if await element.is_visible(timeout=1000):
-                        text = await element.inner_text()
-                        douyin_logger.info(f"  [-] 可见元素文本: {text[:30] if text else '(空)'}")
+                    if await element.is_visible():
                         # 如果是复选框，检查是否已勾选
                         tag_name = await element.evaluate('el => el.tagName.toLowerCase()')
                         if tag_name == 'input':
@@ -780,8 +731,7 @@ class DouYinVideo(object):
                         break
                 if AI选项_clicked:
                     break
-            except Exception as e:
-                douyin_logger.info(f"  [-] 选择器 '{selector}' 失败: {e}")
+            except:
                 continue
         
         if not AI选项_clicked:
@@ -805,29 +755,28 @@ class DouYinVideo(object):
             except:
                 pass
         
-        # 步骤3: 点击确定
-        if AI选项_clicked:
-            await asyncio.sleep(0.5)
-            douyin_logger.info("  [-] 步骤3: 点击确定...")
-            
-            确定_selectors = [
-                'button:has-text("确定")',
-                'button:has-text("确认")',
-                'button:has-text("完成")',
-            ]
-            
-            for selector in 确定_selectors:
-                try:
-                    elements = page.locator(selector)
-                    for i in range(await elements.count()):
-                        el = elements.nth(i)
-                        if await el.is_visible(timeout=2000):
-                            await el.click()
-                            douyin_logger.info(f"  [-] 已点击确定: {selector}")
-                            await asyncio.sleep(0.5)
-                            break
-                except:
-                    continue
+        # 步骤4: 点击确定
+        await asyncio.sleep(0.5)
+        douyin_logger.info("  [-] 步骤4: 点击确定...")
+        
+        确定_selectors = [
+            'button:has-text("确定")',
+            'button:has-text("确认")',
+            'button:has-text("完成")',
+            'span:has-text("确定")',
+            'button[class*="primary"]',
+        ]
+        
+        for selector in 确定_selectors:
+            try:
+                element = page.locator(selector).first
+                if await element.count() > 0 and await element.is_visible():
+                    await element.click()
+                    douyin_logger.info(f"  [-] 已点击确定: {selector}")
+                    await asyncio.sleep(0.5)
+                    break
+            except:
+                pass
         
         if AI选项_clicked:
             douyin_logger.success("  [-] AI 生成内容标记设置完成！")
@@ -837,7 +786,7 @@ class DouYinVideo(object):
             return False
 
     async def close_popups(self, page: Page):
-        """关闭可能存在的弹窗 - 只关闭一次"""
+        """关闭可能存在的弹窗"""
         # 关闭按钮选择器
         close_selectors = [
             'button[aria-label="关闭"]',
@@ -848,17 +797,19 @@ class DouYinVideo(object):
             'button:has-text("Close")',
             'button:has-text("取消")',
             'button:has-text("Cancel")',
+            # 遮罩层和overlay - 这些很重要！
+            'div[class*="mask"]',
+            'div[class*="overlay"]',
         ]
         
-        # 先点击关闭按钮
         for selector in close_selectors:
             try:
                 elements = page.locator(selector)
                 count = await elements.count()
                 for i in range(count):
                     element = elements.nth(i)
-                    if await element.is_visible(timeout=1000):
-                        await element.click()
+                    if await element.is_visible():
+                        await element.click(timeout=1000)
                         douyin_logger.info(f"  [-] 已关闭弹窗: {selector}")
                         await asyncio.sleep(0.3)
             except:
