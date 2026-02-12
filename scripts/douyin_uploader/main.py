@@ -201,24 +201,55 @@ class DouYinVideo(object):
         # 关闭可能存在的弹窗
         await self.close_popups(page)
         douyin_logger.info('  [-] 已检查并关闭弹窗')
+        
+        # 等待页面稳定
+        await asyncio.sleep(2)
+        
+        # 再次关闭弹窗（可能有多层）
+        await self.close_popups(page)
+        await asyncio.sleep(1)
+        
+        # 调试：截图查看当前页面状态
+        try:
+            screenshot_path = f"/tmp/douyin_debug_{int(asyncio.get_event_loop().time())}.png"
+            await page.screenshot(path=screenshot_path, full_page=False)
+            douyin_logger.info(f'  [-] 调试截图已保存: {screenshot_path}')
+        except:
+            pass
+        
         douyin_logger.info(f'  [-] 正在填充标题和作品简介...')
+        
+        # 先尝试找到任何可编辑区域
+        all_editable = page.locator('[contenteditable="true"], input[type="text"], textarea')
+        editable_count = await all_editable.count()
+        douyin_logger.info(f'  [-] 找到 {editable_count} 个可编辑元素')
+        
         title_selectors = [
             "input.semi-input[placeholder*='作品标题']",
             "input.semi-input[placeholder*='填写作品标题']",
             "input[placeholder*='作品标题']",
             ".editor-comp-publish-container-d4oeQI input.semi-input",
+            "input.semi-input",
+            'input[type="text"]',
         ]
-        title_container = await self.locate_first_visible(page, title_selectors, timeout=15000)
+        title_container = await self.locate_first_visible(page, title_selectors, timeout=10000)
         if title_container:
             await title_container.fill(self.title[:30])
+            douyin_logger.info('  [-] 标题填充成功 (input)')
         else:
-            titlecontainer = page.locator(".notranslate")
-            await titlecontainer.click()
-            await page.keyboard.press("Backspace")
-            await page.keyboard.press("Control+KeyA")
-            await page.keyboard.press("Delete")
-            await page.keyboard.type(self.title)
-            await page.keyboard.press("Enter")
+            # 备选方案：使用键盘输入
+            try:
+                titlecontainer = page.locator(".notranslate, [contenteditable='true']").first
+                if await titlecontainer.count() > 0:
+                    await titlecontainer.click(timeout=3000)
+                    await page.keyboard.press("Control+KeyA")
+                    await page.keyboard.press("Delete")
+                    await page.keyboard.type(self.title[:30])
+                    douyin_logger.info('  [-] 标题填充成功 (contenteditable)')
+                else:
+                    douyin_logger.warning('  [-] 未找到标题输入框，跳过标题填充')
+            except Exception as e:
+                douyin_logger.warning(f'  [-] 标题填充失败: {e}，继续...')
 
         description_selectors = [
             ".editor-kit-editor-container .zone-container.editor[contenteditable='true']",
@@ -227,26 +258,36 @@ class DouYinVideo(object):
             ".editor-comp-publish-container-d4oeQI [contenteditable='true']",
             "[contenteditable='true'][data-placeholder*='作品简介']",
             "[contenteditable='true'][data-placeholder*='正文']",
+            "[contenteditable='true']",
+            "textarea",
         ]
-        description_editor = await self.locate_first_visible(page, description_selectors, timeout=15000)
+        description_editor = await self.locate_first_visible(page, description_selectors, timeout=10000)
         if description_editor is None:
-            raise RuntimeError("未找到抖音作品简介输入框，请检查页面结构是否发生变化。")
-        await description_editor.click()
-        try:
-            await description_editor.press("Control+KeyA")
-            await description_editor.press("Delete")
-        except Exception:
-            pass
+            douyin_logger.warning('  [-] 未找到描述编辑器，尝试使用第一个可编辑元素')
+            # 尝试使用第一个可编辑元素
+            if editable_count > 0:
+                description_editor = all_editable.first
+            else:
+                douyin_logger.error('  [-] 没有找到任何可编辑元素')
+                # 不抛出异常，继续尝试
+        else:
+            await description_editor.click()
+            try:
+                await description_editor.press("Control+KeyA")
+                await description_editor.press("Delete")
+            except Exception:
+                pass
 
-        if self.title:
-            await description_editor.type(self.title)
-            await description_editor.type("\n")
+        if description_editor:
+            if self.title:
+                await description_editor.type(self.title)
+                await description_editor.type("\n")
 
-        for index, tag in enumerate(self.tags, start=1):
-            await description_editor.type(f"#{tag} ")
-            await page.wait_for_timeout(200)  # brief pause to let Douyin suggestion panel settle
-        await page.wait_for_timeout(1000)  # ensure the editor syncs before proceeding
-        douyin_logger.info(f'总共添加{len(self.tags)}个话题')
+            for index, tag in enumerate(self.tags, start=1):
+                await description_editor.type(f"#{tag} ")
+                await page.wait_for_timeout(200)
+            await page.wait_for_timeout(500)
+            douyin_logger.info(f'总共添加{len(self.tags)}个话题')
         while True:
             # 判断重新上传按钮是否存在，如果不存在，代表视频正在上传，则等待
             try:
