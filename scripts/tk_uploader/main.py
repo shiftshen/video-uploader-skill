@@ -145,10 +145,28 @@ class TiktokVideo(object):
         context = await set_init_script(context)
         page = await context.new_page()
 
-        await page.goto("https://www.tiktok.com/creator-center/upload")
+        # 尝试多个 TikTok 上传 URL
+        tiktok_urls = [
+            "https://www.tiktok.com/tiktokstudio/upload",
+            "https://www.tiktok.com/creator-center/upload",
+            "https://www.tiktok.com/upload"
+        ]
+        
+        for url in tiktok_urls:
+            try:
+                tiktok_logger.info(f'[-] 尝试访问: {url}')
+                await page.goto(url, timeout=15000, wait_until="domcontentloaded")
+                await page.wait_for_timeout(3000)
+                
+                # 检查是否到达上传页面
+                if "upload" in page.url.lower() or "creator" in page.url.lower():
+                    tiktok_logger.info(f'[+] 成功进入: {page.url}')
+                    break
+            except Exception as e:
+                tiktok_logger.info(f'  [-] URL {url} 失败: {e}')
+                continue
+        
         tiktok_logger.info(f'[+]Uploading-------{self.title}.mp4')
-
-        await page.wait_for_url("https://www.tiktok.com/tiktokstudio/upload", timeout=10000)
 
         try:
             await page.wait_for_selector('iframe[data-tt="Upload_index_iframe"], div.upload-container', timeout=10000)
