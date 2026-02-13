@@ -298,34 +298,58 @@ class TiktokVideo(object):
             await page.wait_for_timeout(1000)
         
         # 使用 data-e2e 属性定位发布按钮
-        success_flag_div = 'button[data-e2e="post_video_button"]'
+        max_attempts = 10
+        attempt = 0
         
-        while True:
+        while attempt < max_attempts:
+            attempt += 1
             try:
-                # 使用 force 绕过遮罩
+                # 先关闭弹窗
+                await self.close_popups(page)
+                await page.wait_for_timeout(500)
+                
+                # 使用 force 绕过遮罩点击发布按钮
                 publish_button = self.locator_base.locator('button[data-e2e="post_video_button"]')
                 if await publish_button.count():
                     await publish_button.click(force=True)
-                    tiktok_logger.info("  [-] 点击了发布按钮")
-
-                # 等待成功标志或检查URL变化
+                    tiktok_logger.info(f"  [-] 点击了发布按钮 (尝试 {attempt})")
+                
                 await page.wait_for_timeout(2000)
                 
-                # 检查是否发布成功 (URL变化或出现成功提示)
-                if "manage" in page.url or "success" in page.url.lower():
-                    tiktok_logger.success("  [-] video published success")
+                # 检查是否有确认对话框并处理
+                confirm_selectors = [
+                    'button:has-text("Confirm")]',
+                    'button:has-text("Post")]',
+                    'button:has-text("是")]',
+                    'button:has-text("确认")]',
+                    'button[data-e2e="upload-btn"]'
+                ]
+                
+                for sel in confirm_selectors:
+                    confirm_btn = page.locator(sel)
+                    if await confirm_btn.count():
+                        try:
+                            await confirm_btn.first.click(force=True)
+                            tiktok_logger.info(f"  [-] 点击了确认按钮: {sel}")
+                            await page.wait_for_timeout(2000)
+                        except:
+                            pass
+                
+                # 检查URL是否变化 (表示发布成功)
+                if "video" not in page.url.lower() or "manage" in page.url:
+                    tiktok_logger.success("  [-] video published success!")
                     break
                 
-                # 检查是否有确认对话框
-                confirm_btns = page.locator('button:has-text("Confirm"), button:has-text("Post")')
-                if await confirm_btns.count():
-                    await confirm_btns.first.click(force=True)
-                    await page.wait_for_timeout(2000)
-                    
+                # 检查是否有成功提示
+                success_text = page.locator('text=Posted, text=Published, text=发布成功')
+                if await success_text.count():
+                    tiktok_logger.success("  [-] video published!")
+                    break
+                
             except Exception as e:
                 tiktok_logger.info(f"  [-] 发布异常: {e}")
             
-            tiktok_logger.info("  [-] video publishing...")
+            tiktok_logger.info(f"  [-] video publishing... (尝试 {attempt}/{max_attempts})")
             await page.wait_for_timeout(3000)
 
     async def detect_upload_status(self, page):
