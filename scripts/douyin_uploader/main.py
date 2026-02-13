@@ -352,22 +352,29 @@ class DouYinVideo(object):
             douyin_logger.info('  [-] 正在设置竖封面...')
             try:
                 await page.get_by_text("设置竖封面").first.click()
-                await page.wait_for_timeout(2000)
+                await page.wait_for_timeout(3000)
                 # 上传竖封面图片 - 使用更精确的选择器
                 await page.locator("input.semi-upload-hidden-input[type='file']").first.set_input_files(thumbnail_path)
-                await page.wait_for_timeout(3000)
+                await page.wait_for_timeout(5000)  # 等待更长时间
                 # 点击完成按钮
                 await page.locator('button:has-text("完成"):visible').click()
                 douyin_logger.info('  [-] 竖封面设置完成')
-                await page.wait_for_timeout(2000)
+                await page.wait_for_timeout(3000)  # 等待弹窗更新
             except Exception as e:
                 douyin_logger.info(f'  [-] 设置竖封面失败: {e}')
             
-            # 第三步：设置横封面
+            # 检查并关闭可能弹出的推荐弹窗
+            douyin_logger.info('  [-] 检查推荐弹窗...')
+            await self.close_popups(page)
+            await page.wait_for_timeout(2000)
+            
+            # 第三步：设置横封面 - 需要先等待竖封面弹窗完全消失
             douyin_logger.info('  [-] 正在设置横封面...')
             try:
-                # 点击设置横封面按钮
-                await page.get_by_role("button", name="设置横封面").first.click()
+                # 等待设置横封面按钮可见且可点击
+                horizontal_btn = page.get_by_role("button", name="设置横封面")
+                await horizontal_btn.wait_for(state="visible", timeout=10000)
+                await horizontal_btn.first.click()
                 douyin_logger.info('  [-] 点击了设置横封面按钮')
                 await page.wait_for_timeout(3000)
                 
@@ -375,7 +382,7 @@ class DouYinVideo(object):
                 file_input = page.locator("input.semi-upload-hidden-input[type='file']").first
                 await file_input.set_input_files(thumbnail_path)
                 douyin_logger.info('  [-] 上传了横封面图片')
-                await page.wait_for_timeout(4000)
+                await page.wait_for_timeout(5000)  # 等待更长时间
                 
                 # 点击完成按钮
                 await page.locator('button:has-text("完成"):visible').click()
