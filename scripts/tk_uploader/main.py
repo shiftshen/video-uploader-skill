@@ -82,29 +82,36 @@ class TiktokVideo(object):
         try:
             tiktok_logger.info('  [-] 关闭弹窗...')
             
+            # 使用 JavaScript 强制移除遮罩元素
+            await page.evaluate("""
+                () => {
+                    // 移除 joyride overlay
+                    const joyrideOverlay = document.querySelector('div.react-joyride__overlay');
+                    if (joyrideOverlay) joyrideOverlay.remove();
+                    
+                    // 移除其他常见遮罩
+                    const overlays = document.querySelectorAll('[data-test-id="overlay"]');
+                    overlays.forEach(el => el.remove());
+                    
+                    // 移除 modal 遮罩
+                    const modals = document.querySelectorAll('div[class*="overlay"]');
+                    modals.forEach(el => el.remove());
+                }
+            """)
+            await page.wait_for_timeout(500)
+            
             # 多次尝试关闭
             for attempt in range(3):
                 # 按ESC关闭
                 await page.keyboard.press("Escape")
                 await page.wait_for_timeout(500)
                 
-                # 关闭 joyride 弹窗 - 强制点击
-                try:
-                    overlay = page.locator('div.react-joyride__overlay')
-                    if await overlay.count() > 0:
-                        # 尝试点击页面其他部分来关闭
-                        await page.locator('body').click(position={"x": 10, "y": 10})
-                        await page.wait_for_timeout(500)
-                except:
-                    pass
-                
-                # 关闭可能的各种弹窗
+                # 关闭可能的各种弹窗按钮
                 close_selectors = [
                     'button:has-text("Skip")]',
                     'button:has-text("Got it")]',
                     'button:has-text("OK")]',
                     'button:has-text("Close")]',
-                    '[data-test-id="overlay"]',
                     'button[class*="close"]'
                 ]
                 
@@ -116,15 +123,6 @@ class TiktokVideo(object):
                             await page.wait_for_timeout(500)
                     except:
                         pass
-                
-                # 检查是否还有遮罩
-                try:
-                    overlay = page.locator('div[class*="overlay"]')
-                    if await overlay.count() > 0:
-                        if not await overlay.first.is_visible():
-                            break
-                except:
-                    break
                     
             tiktok_logger.info('  [-] 弹窗处理完成')
         except Exception as e:
