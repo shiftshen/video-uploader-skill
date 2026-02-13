@@ -5,7 +5,10 @@ from time import sleep
 
 from xhs import XhsClient
 
-from uploader.xhs_uploader.main import sign
+# Use sign_local instead of sign (no server needed)
+import sys
+sys.path.insert(0, str(__file__).rsplit('/', 1)[0])
+from main import sign_local as sign
 
 # pip install qrcode
 if __name__ == '__main__':

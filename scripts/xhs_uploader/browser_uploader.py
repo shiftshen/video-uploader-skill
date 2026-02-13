@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Xiaohongshu (小红书) Uploader using browser automation
+"""
+import asyncio
+import json
+import os
+from pathlib import Path
+from playwright.async_api import async_playwright
+from conf import LOCAL_CHROME_PATH, BASE_DIR
+
+
+class XiaohongshuVideo:
+    def __init__(self, title, file_path, tags, publish_date=0, account_file=None):
+        self.title = title
+        self.file_path = file_path
+        self.tags = tags
+        self.publish_date = publish_date
+        self.account_file = account_file
+        self.local_executable_path = LOCAL_CHROME_PATH
+        
+    async def setup_browser(self, playwright):
+        """Setup browser with stealth"""
+        stealth_js_path = BASE_DIR / "utils/stealth.min.js"
+        
+        if self.local_executable_path:
+            browser = await playwright.chromium.launch(
+                headless=False,
+                executable_path=self.local_executable_path
+            )
+        else:
+            browser = await playwright.chromium.launch(headless=False)
+        
+        context = await browser.new_context()
+        await context.add_init_script(path=stealth_js_path)
+        
+        # Load cookies if available
+        if self.account_file and os.path.exists(self.account_file):
+            with open(self.account_file, 'r') as f:
+                cookies = json.load(f)
+                cookie_list = [
+                    {'name': k, 'value': v, 'domain': '.xiaohongshu.com', 'path': '/'}
+                    for k, v in cookies.items()
+                ]
+                await context.add_cookies(cookie_list)
+        
+        return browser, context
+    
+    async def upload(self, playwright):
+        """Upload video using browser"""
+        browser, context = await self.setup_browser(playwright)
+        page = await context.new_page()
+        
+        # Go to creator upload page
+        await page.goto('https://creator.xiaohongshu.com/publish/publish?source=official')
+        await page.wait_for_timeout(5000)
+        
+        # Check if login required
+        if 'login' in page.url:
+            print("请在浏览器中登录账号...")
+            await page.wait_for_timeout(120000)  # Wait for manual login
+            await page.wait_for_timeout(5000)
+        
+        # Look for upload button/input
+        print("查找上传按钮...")
+        
+        # Try to find file input
+        file_input = await page.query_selector('input[type="file"]')
+        if file_input:
+            print("找到文件上传输入框")
+            await file_input.set_input_files(self.file_path)
+            print(f"已选择视频: {self.file_path}")
+        else:
+            # Try clicking upload button
+            print("尝试点击上传按钮...")
+            upload_buttons = await page.query_selector_all('button')
+            for btn in upload_buttons:
+                text = await btn.inner_text()
+                if '上传' in text or '视频' in text:
+                    print(f"点击按钮: {text}")
+                    await btn.click()
+                    await page.wait_for_timeout(2000)
+                    # Now try file input
+                    file_input = await page.query_selector('input[type="file"]')
+                    if file_input:
+                        await file_input.set_input_files(self.file_path)
+                        break
+        
+        # Wait for upload
+        print("等待视频上传...")
+        await page.wait_for_timeout(30000)
+        
+        # Fill in title
+        print("填写标题...")
+        title_inputs = await page.query_selector_all('input')
+        for inp in title_inputs:
+            placeholder = await inp.get_attribute('placeholder')
+            if placeholder and '标题' in placeholder:
+                await inp.fill(self.title)
+                break
+        
+        # Fill in description/tags
+        print("填写描述和标签...")
+        textareas = await page.query_selector_all('textarea')
+        for ta in textareas:
+            placeholder = await ta.get_attribute('placeholder')
+            if placeholder and ('描述' in placeholder or '正文' in placeholder):
+                desc = self.title
+                if self.tags:
+                    for tag in self.tags:
+                        desc += f" #{tag}"
+                await ta.fill(desc)
+                break
+        
+        # Save cookies
+        cookies = await context.cookies()
+        cookie_dict = {c['name']: c['value'] for c in cookies}
+        os.makedirs(os.path.dirname(self.account_file), exist_ok=True)
+        with open(self.account_file, 'w') as f:
+            json.dump(cookie_dict, f, indent=2)
+        print("Cookie saved!")
+        
+        # Click publish
+        print("点击发布按钮...")
+        publish_buttons = await page.query_selector_all('button')
+        for btn in publish_buttons:
+            text = await btn.inner_text()
+            if '发布' in text or '发表' in text:
+                print(f"点击发布: {text}")
+                await btn.click()
+                break
+        
+        await page.wait_for_timeout(5000)
+        print("上传流程完成!")
+        
+        await browser.close()
+        return True
+    
+    async def main(self):
+        """Main entry point"""
+        async with async_playwright() as playwright:
+            await self.upload(playwright)
+
+
+async def xhs_setup(account_file, handle=False):
+    """Setup and verify Xiaohongshu account"""
+    if not account_file:
+        return False
+    
+    # Check if cookie file exists
+    if not os.path.exists(account_file):
+        print(f"Warning: Account file not found: {account_file}")
+        if handle:
+            print("Please login via browser when prompted...")
+        return False
+    
+    # Verify cookie has required fields
+    with open(account_file, 'r') as f:
+        cookies = json.load(f)
+    
+    if 'a1' not in cookies:
+        print("Warning: Cookie missing 'a1' field")
+        return False
+    
+    print(f"[+] Xiaohongshu account configured")
+    return True
+
+
+async def main():
+    """Test upload"""
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--title', required=True)
+    parser.add_argument('--video', required=True)
+    parser.add_argument('--tags', default='')
+    parser.add_argument('--account', default='cookies/xhs_uploader/cookie.json')
+    args = parser.parse_args()
+    
+    tags = args.tags.split(',') if args.tags else []
+    
+    video = XiaohongshuVideo(
+        title=args.title,
+        file_path=args.video,
+        tags=tags,
+        account_file=args.account
+    )
+    await video.main()
+
+
+if __name__ == '__main__':
+    asyncio.run(main())

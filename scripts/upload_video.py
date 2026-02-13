@@ -17,6 +17,9 @@ from douyin_uploader.main import DouYinVideo, douyin_setup
 from ks_uploader.main import KSVideo, ks_setup
 from tk_uploader.main import TiktokVideo, tiktok_setup
 from tencent_uploader.main import TencentVideo, weixin_setup
+from xhs_uploader.browser_uploader import XiaohongshuVideo, xhs_setup
+from xhs import XhsClient
+from xhs_uploader.main import sign_local as xhs_sign
 
 
 async def upload_to_douyin(title, video_path, tags, publish_date, account_file, thumbnail_path=None, product_link='', product_title=''):
@@ -94,6 +97,25 @@ async def upload_to_tencent(title, video_path, tags, publish_date, account_file,
         publish_date=publish_date,
         account_file=account_file,
         category=category
+    )
+    await video.main()
+    return True
+
+
+async def upload_to_xhs(title, video_path, tags, publish_date, account_file):
+    """Upload video to Xiaohongshu (小红书) using browser automation"""
+    # Setup and verify cookie
+    if not await xhs_setup(account_file, handle=True):
+        print("Failed to setup Xiaohongshu account")
+        return False
+    
+    # Create video object and upload (browser-based)
+    video = XiaohongshuVideo(
+        title=title,
+        file_path=video_path,
+        tags=tags,
+        publish_date=publish_date,
+        account_file=account_file
     )
     await video.main()
     return True
@@ -193,9 +215,13 @@ async def main():
                 category=args.category
             )
         elif args.platform == 'xhs':
-            print("Xiaohongshu (小红书) upload is not yet implemented in this script")
-            print("Please refer to the xhs_uploader module for implementation details")
-            return
+            await upload_to_xhs(
+                title=args.title,
+                video_path=args.video,
+                tags=tags,
+                publish_date=publish_date,
+                account_file=args.account
+            )
         
         print(f"\n✅ Successfully uploaded to {args.platform}")
         
