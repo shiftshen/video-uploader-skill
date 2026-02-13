@@ -289,6 +289,14 @@ class DouYinVideo(object):
         # 关闭浏览器上下文和浏览器实例
         await context.close()
         await browser.close()
+
+    async def close_popups(self, page: Page):
+        """关闭可能弹出的对话框"""
+        try:
+            await page.keyboard.press("Escape")
+            await page.wait_for_timeout(500)
+        except:
+            pass
     
     async def set_thumbnail(self, page: Page, thumbnail_path: str):
         if thumbnail_path:
@@ -309,10 +317,10 @@ class DouYinVideo(object):
             # 第二步：设置竖封面
             douyin_logger.info('  [-] 正在设置竖封面...')
             try:
-                await page.locator('text="设置竖封面"').click()
+                await page.get_by_text("设置竖封面").first.click()
                 await page.wait_for_timeout(2000)
-                # 上传竖封面图片
-                await page.locator("input[type='file']").set_input_files(thumbnail_path)
+                # 上传竖封面图片 - 使用更精确的选择器
+                await page.locator("input.semi-upload-hidden-input[type='file']").first.set_input_files(thumbnail_path)
                 await page.wait_for_timeout(3000)
                 # 点击完成按钮
                 await page.locator('button:has-text("完成"):visible').click()
@@ -324,10 +332,10 @@ class DouYinVideo(object):
             # 第三步：设置横封面
             douyin_logger.info('  [-] 正在设置横封面...')
             try:
-                await page.locator('text="设置横封面"').click()
+                await page.get_by_role("button", name="设置横封面").first.click()
                 await page.wait_for_timeout(2000)
                 # 上传横封面图片
-                await page.locator("input[type='file']").set_input_files(thumbnail_path)
+                await page.locator("input.semi-upload-hidden-input[type='file']").first.set_input_files(thumbnail_path)
                 await page.wait_for_timeout(3000)
                 # 点击完成按钮
                 await page.locator('button:has-text("完成"):visible').click()
