@@ -293,21 +293,57 @@ class DouYinVideo(object):
     async def set_thumbnail(self, page: Page, thumbnail_path: str):
         if thumbnail_path:
             douyin_logger.info('  [-] 正在设置视频封面...')
-            await page.click('text="选择封面"')
-            await page.wait_for_selector("div.dy-creator-content-modal")
-            await page.click('text="设置竖封面"')
-            await page.wait_for_timeout(2000)  # 等待2秒
-            # 定位到上传区域并点击
-            await page.locator("div[class^='semi-upload upload'] >> input.semi-upload-hidden-input").set_input_files(thumbnail_path)
-            await page.wait_for_timeout(2000)  # 等待2秒
-            await page.locator("div#tooltip-container button:visible:has-text('完成')").click()
-            # finish_confirm_element = page.locator("div[class^='confirmBtn'] >> div:has-text('完成')")
-            # if await finish_confirm_element.count():
-            #     await finish_confirm_element.click()
-            # await page.locator("div[class^='footer'] button:has-text('完成')").click()
+            
+            # 第一步：点击选择封面按钮
+            try:
+                await page.locator('text="选择封面"').click()
+                douyin_logger.info('  [-] 点击了选择封面')
+                await page.wait_for_timeout(2000)
+            except Exception as e:
+                douyin_logger.info(f'  [-] 点击选择封面失败: {e}')
+            
+            # 等待封面弹窗出现
+            await page.wait_for_selector("div.dy-creator-content-modal", timeout=5000)
+            douyin_logger.info('  [-] 封面弹窗已打开')
+            
+            # 第二步：设置竖封面
+            douyin_logger.info('  [-] 正在设置竖封面...')
+            try:
+                await page.locator('text="设置竖封面"').click()
+                await page.wait_for_timeout(2000)
+                # 上传竖封面图片
+                await page.locator("input[type='file']").set_input_files(thumbnail_path)
+                await page.wait_for_timeout(3000)
+                # 点击完成按钮
+                await page.locator('button:has-text("完成"):visible').click()
+                douyin_logger.info('  [-] 竖封面设置完成')
+                await page.wait_for_timeout(2000)
+            except Exception as e:
+                douyin_logger.info(f'  [-] 设置竖封面失败: {e}')
+            
+            # 第三步：设置横封面
+            douyin_logger.info('  [-] 正在设置横封面...')
+            try:
+                await page.locator('text="设置横封面"').click()
+                await page.wait_for_timeout(2000)
+                # 上传横封面图片
+                await page.locator("input[type='file']").set_input_files(thumbnail_path)
+                await page.wait_for_timeout(3000)
+                # 点击完成按钮
+                await page.locator('button:has-text("完成"):visible').click()
+                douyin_logger.info('  [-] 横封面设置完成')
+                await page.wait_for_timeout(2000)
+            except Exception as e:
+                douyin_logger.info(f'  [-] 设置横封面失败: {e}')
+            
+            # 关闭封面设置对话框 - 按ESC或点击空白处
+            try:
+                await page.keyboard.press("Escape")
+                await page.wait_for_timeout(1000)
+            except:
+                pass
+            
             douyin_logger.info('  [+] 视频封面设置完成！')
-            # 等待封面设置对话框关闭
-            await page.wait_for_selector("div.extractFooter", state='detached')
             
 
     async def set_location(self, page: Page, location: str = ""):
