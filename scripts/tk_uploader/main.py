@@ -81,40 +81,51 @@ class TiktokVideo(object):
         """关闭可能弹出的对话框和遮罩"""
         try:
             tiktok_logger.info('  [-] 关闭弹窗...')
-            # 按ESC关闭
-            await page.keyboard.press("Escape")
-            await page.wait_for_timeout(500)
             
-            # 关闭可能的各种弹窗
-            close_selectors = [
-                'button[class*="close"]',
-                'button[aria-label="Close"]',
-                'button:has-text("Close")]',
-                'button:has-text("Got it")]',
-                'button:has-text("OK")]',
-                'button:has-text("Skip")]',
-                'div[class*="overlay"]',
-                'div[class*="modal"] button'
-            ]
-            
-            for selector in close_selectors:
+            # 多次尝试关闭
+            for attempt in range(3):
+                # 按ESC关闭
+                await page.keyboard.press("Escape")
+                await page.wait_for_timeout(500)
+                
+                # 关闭 joyride 弹窗 - 强制点击
                 try:
-                    btn = page.locator(selector).first
-                    if await btn.count() > 0 and await btn.is_visible():
-                        await btn.click()
+                    overlay = page.locator('div.react-joyride__overlay')
+                    if await overlay.count() > 0:
+                        # 尝试点击页面其他部分来关闭
+                        await page.locator('body').click(position={"x": 10, "y": 10})
                         await page.wait_for_timeout(500)
                 except:
                     pass
-            
-            # 关闭 joyride 弹窗
-            try:
-                overlay = page.locator('div.react-joyride__overlay')
-                if await overlay.count() > 0:
-                    await page.keyboard.press("Escape")
-                    await page.wait_for_timeout(500)
-            except:
-                pass
                 
+                # 关闭可能的各种弹窗
+                close_selectors = [
+                    'button:has-text("Skip")]',
+                    'button:has-text("Got it")]',
+                    'button:has-text("OK")]',
+                    'button:has-text("Close")]',
+                    '[data-test-id="overlay"]',
+                    'button[class*="close"]'
+                ]
+                
+                for selector in close_selectors:
+                    try:
+                        btn = page.locator(selector).first
+                        if await btn.count() > 0 and await btn.is_visible():
+                            await btn.click()
+                            await page.wait_for_timeout(500)
+                    except:
+                        pass
+                
+                # 检查是否还有遮罩
+                try:
+                    overlay = page.locator('div[class*="overlay"]')
+                    if await overlay.count() > 0:
+                        if not await overlay.first.is_visible():
+                            break
+                except:
+                    break
+                    
             tiktok_logger.info('  [-] 弹窗处理完成')
         except Exception as e:
             tiktok_logger.info(f'  [-] 关闭弹窗失败: {e}')
