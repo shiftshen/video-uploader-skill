@@ -331,11 +331,11 @@ class TiktokVideo(object):
                     break
                 
                 # 尝试多种方式检测上传完成
-                # 方法1: 检查发布按钮是否可用
-                post_btn = self.locator_base.locator('div.btn-post button, button:has-text("Post"), button:has-text("发布")')
+                # 方法1: 检查发布按钮 (使用 data-e2e 属性)
+                post_btn = self.locator_base.locator('button[data-e2e="post_video_button"]')
                 if await post_btn.count():
-                    btn_disabled = await post_btn.get_attribute("disabled")
-                    if btn_disabled is None:
+                    btn_disabled = await post_btn.get_attribute("aria-disabled")
+                    if btn_disabled == "false":
                         tiktok_logger.info("  [-] video uploaded (按钮可用)")
                         break
                 
