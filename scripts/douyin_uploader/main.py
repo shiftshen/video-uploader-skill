@@ -235,20 +235,41 @@ class DouYinVideo(object):
             await self.set_schedule_time_douyin(page, self.publish_date)
 
         # 判断视频是否发布成功
-        while True:
-            # 判断视频是否发布成功
+        max_publish_attempts = 10
+        publish_attempt = 0
+        
+        while publish_attempt < max_publish_attempts:
+            publish_attempt += 1
             try:
+                # 尝试找到并点击发布按钮
                 publish_button = page.get_by_role('button', name="发布", exact=True)
                 if await publish_button.count():
                     await publish_button.click()
-                await page.wait_for_url("https://creator.douyin.com/creator-micro/content/manage**",
-                                        timeout=3000)  # 如果自动跳转到作品页面，则代表发布成功
-                douyin_logger.success("  [-]视频发布成功")
-                break
-            except:
-                douyin_logger.info("  [-] 视频正在发布中...")
-                await page.screenshot(full_page=True)
-                await asyncio.sleep(0.5)
+                    await page.wait_for_timeout(2000)
+                    
+                    # 检查是否有确认对话框
+                    confirm_button = page.get_by_role('button', name="确认发布")
+                    if await confirm_button.count():
+                        await confirm_button.click()
+                        await page.wait_for_timeout(2000)
+                
+                # 检查是否跳转到管理页面
+                if "creator-micro/content/manage" in page.url or "creator-micro/content/upload" not in page.url:
+                    douyin_logger.success("  [-]视频发布成功")
+                    break
+                    
+                # 检查是否有其他弹窗需要处理
+                await self.close_popups(page)
+                    
+            except Exception as e:
+                pass
+            
+            douyin_logger.info(f"  [-] 视频正在发布中... (尝试 {publish_attempt}/{max_publish_attempts})")
+            await page.screenshot(full_page=True)
+            await asyncio.sleep(2)
+        
+        if publish_attempt >= max_publish_attempts:
+            douyin_logger.error("  [-] 发布超时，请手动检查发布状态")
 
         await context.storage_state(path=self.account_file)  # 保存cookie
         douyin_logger.success('  [-]cookie更新完毕！')
