@@ -332,24 +332,46 @@ class DouYinVideo(object):
             # 第三步：设置横封面
             douyin_logger.info('  [-] 正在设置横封面...')
             try:
+                # 点击设置横封面按钮
                 await page.get_by_role("button", name="设置横封面").first.click()
-                await page.wait_for_timeout(2000)
-                # 上传横封面图片
-                await page.locator("input.semi-upload-hidden-input[type='file']").first.set_input_files(thumbnail_path)
+                douyin_logger.info('  [-] 点击了设置横封面按钮')
                 await page.wait_for_timeout(3000)
+                
+                # 上传横封面图片
+                file_input = page.locator("input.semi-upload-hidden-input[type='file']").first
+                await file_input.set_input_files(thumbnail_path)
+                douyin_logger.info('  [-] 上传了横封面图片')
+                await page.wait_for_timeout(4000)
+                
                 # 点击完成按钮
                 await page.locator('button:has-text("完成"):visible').click()
-                douyin_logger.info('  [-] 横封面设置完成')
-                await page.wait_for_timeout(2000)
+                douyin_logger.info('  [-] 点击了完成按钮')
+                await page.wait_for_timeout(3000)
             except Exception as e:
                 douyin_logger.info(f'  [-] 设置横封面失败: {e}')
             
-            # 关闭封面设置对话框 - 按ESC或点击空白处
+            # 关闭封面设置对话框 - 更彻底地关闭
+            douyin_logger.info('  [-] 尝试关闭封面设置对话框...')
             try:
+                # 方法1: 按ESC
                 await page.keyboard.press("Escape")
+                await page.wait_for_timeout(1000)
+                
+                # 方法2: 尝试点击遮罩层关闭
+                await page.locator('div[class*="modal"]').first.click(timeout=2000)
                 await page.wait_for_timeout(1000)
             except:
                 pass
+            
+            # 等待封面弹窗真的关闭
+            try:
+                await page.wait_for_selector("div.dy-creator-content-modal", state="hidden", timeout=5000)
+                douyin_logger.info('  [-] 封面弹窗已关闭')
+            except:
+                # 如果没关闭，强制刷新页面状态
+                douyin_logger.info('  [-] 弹窗可能还在，尝试刷新状态')
+                await page.keyboard.press("Escape")
+                await page.wait_for_timeout(2000)
             
             douyin_logger.info('  [+] 视频封面设置完成！')
             
