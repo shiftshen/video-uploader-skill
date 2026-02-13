@@ -241,32 +241,44 @@ class DouYinVideo(object):
         while publish_attempt < max_publish_attempts:
             publish_attempt += 1
             try:
-                # 尝试找到并点击发布按钮
-                publish_button = page.get_by_role('button', name="发布", exact=True)
-                if await publish_button.count():
+                # 关闭所有弹窗
+                await self.close_popups(page)
+                await page.wait_for_timeout(500)
+                
+                # 尝试多种方式找到发布按钮
+                publish_button = None
+                
+                # 方法1: 按文本查找
+                if await page.get_by_role('button', name="发布", exact=True).count():
+                    publish_button = page.get_by_role('button', name="发布", exact=True).first
+                # 方法2: 模糊匹配
+                elif await page.locator('button:has-text("发布")').count():
+                    publish_button = page.locator('button:has-text("发布")').first
+                # 方法3: XPath
+                elif await page.locator('//button[contains(text(),"发布")]').count():
+                    publish_button = page.locator('//button[contains(text(),"发布")]').first
+                
+                if publish_button and await publish_button.count():
+                    douyin_logger.info(f'  [-] 点击发布按钮 (尝试 {publish_attempt})')
                     await publish_button.click()
-                    await page.wait_for_timeout(2000)
+                    await page.wait_for_timeout(3000)
                     
                     # 检查是否有确认对话框
-                    confirm_button = page.get_by_role('button', name="确认发布")
-                    if await confirm_button.count():
-                        await confirm_button.click()
-                        await page.wait_for_timeout(2000)
+                    for confirm_text in ["确认发布", "确定", "yes", "确认"]:
+                        confirm_button = page.get_by_role('button', name=confirm_text)
+                        if await confirm_button.count():
+                            douyin_logger.info(f'  [-] 点击确认按钮: {confirm_text}')
+                            await confirm_button.click()
+                            await page.wait_for_timeout(2000)
                 
-                # 检查是否跳转到管理页面
-                if "creator-micro/content/manage" in page.url or "creator-micro/content/upload" not in page.url:
-                    douyin_logger.success("  [-]视频发布成功")
-                    break
-                    
-                # 检查是否有其他弹窗需要处理
+                # 关闭弹窗后再次尝试
                 await self.close_popups(page)
                     
             except Exception as e:
-                pass
+                douyin_logger.info(f'  [-] 发布出错: {e}')
             
             douyin_logger.info(f"  [-] 视频正在发布中... (尝试 {publish_attempt}/{max_publish_attempts})")
-            await page.screenshot(full_page=True)
-            await asyncio.sleep(2)
+            await page.wait_for_timeout(3000)
         
         if publish_attempt >= max_publish_attempts:
             douyin_logger.error("  [-] 发布超时，请手动检查发布状态")
