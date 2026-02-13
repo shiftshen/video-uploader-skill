@@ -297,26 +297,36 @@ class TiktokVideo(object):
             await self.close_popups(page)
             await page.wait_for_timeout(1000)
         
-        success_flag_div = '#\\:r9\\:'
+        # 使用 data-e2e 属性定位发布按钮
+        success_flag_div = 'button[data-e2e="post_video_button"]'
+        
         while True:
             try:
                 # 使用 force 绕过遮罩
-                publish_button = self.locator_base.locator('div.btn-post')
+                publish_button = self.locator_base.locator('button[data-e2e="post_video_button"]')
                 if await publish_button.count():
                     await publish_button.click(force=True)
+                    tiktok_logger.info("  [-] 点击了发布按钮")
 
-                await self.locator_base.locator(success_flag_div).wait_for(state="visible", timeout=3000)
-                tiktok_logger.success("  [-] video published success")
-                break
-            except Exception as e:
-                if await self.locator_base.locator(success_flag_div).count():
-                    tiktok_logger.success("  [-]video published success")
+                # 等待成功标志或检查URL变化
+                await page.wait_for_timeout(2000)
+                
+                # 检查是否发布成功 (URL变化或出现成功提示)
+                if "manage" in page.url or "success" in page.url.lower():
+                    tiktok_logger.success("  [-] video published success")
                     break
-                else:
-                    tiktok_logger.exception(f"  [-] Exception: {e}")
-                    tiktok_logger.info("  [-] video publishing")
-                    await page.screenshot(full_page=True)
-                    await asyncio.sleep(0.5)
+                
+                # 检查是否有确认对话框
+                confirm_btns = page.locator('button:has-text("Confirm"), button:has-text("Post")')
+                if await confirm_btns.count():
+                    await confirm_btns.first.click(force=True)
+                    await page.wait_for_timeout(2000)
+                    
+            except Exception as e:
+                tiktok_logger.info(f"  [-] 发布异常: {e}")
+            
+            tiktok_logger.info("  [-] video publishing...")
+            await page.wait_for_timeout(3000)
 
     async def detect_upload_status(self, page):
         tiktok_logger.info("  [-] 检测上传状态...")
