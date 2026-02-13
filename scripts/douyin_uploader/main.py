@@ -294,9 +294,9 @@ class DouYinVideo(object):
         if thumbnail_path:
             douyin_logger.info('  [-] 正在设置视频封面...')
             
-            # 第一步：点击选择封面按钮
+            # 第一步：点击选择封面按钮 - 使用first()来处理多个匹配
             try:
-                await page.locator('text="选择封面"').click()
+                await page.get_by_text("选择封面").first.click()
                 douyin_logger.info('  [-] 点击了选择封面')
                 await page.wait_for_timeout(2000)
             except Exception as e:
