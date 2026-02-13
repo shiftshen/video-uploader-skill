@@ -293,9 +293,43 @@ class DouYinVideo(object):
     async def close_popups(self, page: Page):
         """关闭可能弹出的对话框"""
         try:
-            await page.keyboard.press("Escape")
-            await page.wait_for_timeout(500)
-        except:
+            # 尝试多次关闭弹窗
+            for i in range(3):
+                # 按ESC
+                await page.keyboard.press("Escape")
+                await page.wait_for_timeout(500)
+                
+                # 尝试点击任何可见的关闭按钮
+                close_selectors = [
+                    'button[class*="close"]',
+                    'button[aria-label="关闭"]', 
+                    'button[aria-label="Close"]',
+                    'button:has-text("关闭")',
+                    'button:has-text("取消")',
+                    'button:has-text("我知道啦")]'
+                ]
+                
+                for selector in close_selectors:
+                    try:
+                        btn = page.locator(selector).first
+                        if await btn.is_visible():
+                            await btn.click()
+                            await page.wait_for_timeout(500)
+                    except:
+                        pass
+                
+                # 检查是否还有弹窗
+                modal = page.locator("div[class*='modal']").first
+                if await modal.count() > 0:
+                    try:
+                        if await modal.is_visible():
+                            await page.wait_for_timeout(500)
+                    except:
+                        break
+                else:
+                    break
+                    
+        except Exception as e:
             pass
     
     async def set_thumbnail(self, page: Page, thumbnail_path: str):
