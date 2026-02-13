@@ -62,56 +62,107 @@ class XiaohongshuVideo:
             await page.wait_for_timeout(120000)  # Wait for manual login
             await page.wait_for_timeout(5000)
         
-        # Look for upload button/input
-        print("查找上传按钮...")
+        # Wait for page to load
+        await page.wait_for_timeout(3000)
         
-        # Try to find file input
+        # Find file input - it might be hidden so we can't use wait_for_selector
+        print("查找文件上传输入框...")
         file_input = await page.query_selector('input[type="file"]')
+        
         if file_input:
-            print("找到文件上传输入框")
+            print("找到文件上传输入框 (hidden)")
+            # Set files even if hidden - Playwright can handle this
             await file_input.set_input_files(self.file_path)
             print(f"已选择视频: {self.file_path}")
         else:
-            # Try clicking upload button
+            # Try clicking upload button first
             print("尝试点击上传按钮...")
             upload_buttons = await page.query_selector_all('button')
             for btn in upload_buttons:
                 text = await btn.inner_text()
-                if '上传' in text or '视频' in text:
-                    print(f"点击按钮: {text}")
+                if '上传' in text and '视频' in text:
+                    print(f"点击上传按钮: {text}")
                     await btn.click()
-                    await page.wait_for_timeout(2000)
-                    # Now try file input
+                    await page.wait_for_timeout(3000)
                     file_input = await page.query_selector('input[type="file"]')
                     if file_input:
                         await file_input.set_input_files(self.file_path)
+                        print(f"已选择视频: {self.file_path}")
                         break
+            else:
+                print("未找到上传入口!")
+                await browser.close()
+                return False
         
-        # Wait for upload
-        print("等待视频上传...")
-        await page.wait_for_timeout(30000)
+        # Wait for video to upload - look for title input which appears after upload
+        print("等待视频上传完成...")
+        await page.wait_for_timeout(15000)
         
-        # Fill in title
+        # Now fill in title and description - they should appear after upload
         print("填写标题...")
-        title_inputs = await page.query_selector_all('input')
-        for inp in title_inputs:
-            placeholder = await inp.get_attribute('placeholder')
-            if placeholder and '标题' in placeholder:
-                await inp.fill(self.title)
-                break
         
-        # Fill in description/tags
-        print("填写描述和标签...")
-        textareas = await page.query_selector_all('textarea')
-        for ta in textareas:
-            placeholder = await ta.get_attribute('placeholder')
-            if placeholder and ('描述' in placeholder or '正文' in placeholder):
-                desc = self.title
-                if self.tags:
-                    for tag in self.tags:
-                        desc += f" #{tag}"
-                await ta.fill(desc)
-                break
+        # Try multiple selectors for title
+        title_filled = False
+        title_selectors = [
+            'input[placeholder*="标题"]',
+            'input[placeholder*="标题"]',
+            'input[class*="title"]',
+            'input[class*="Title"]',
+            'input'
+        ]
+        
+        for selector in title_selectors:
+            try:
+                inputs = await page.query_selector_all(selector)
+                for inp in inputs:
+                    placeholder = await inp.get_attribute('placeholder') or ''
+                    if '标题' in placeholder:
+                        await inp.fill(self.title)
+                        print(f"标题已填写: {self.title}")
+                        title_filled = True
+                        break
+                if title_filled:
+                    break
+            except:
+                pass
+        
+        # Fill description - look for textareas or editable divs
+        print("填写正文和话题...")
+        desc = self.title
+        if self.tags:
+            for tag in self.tags:
+                desc += f" #{tag}"
+        
+        desc_filled = False
+        desc_selectors = [
+            'textarea[placeholder*="正文"]',
+            'textarea[placeholder*="描述"]',
+            'textarea[placeholder*="内容"]',
+            'div[contenteditable="true"]',
+            'textarea'
+        ]
+        
+        for selector in desc_selectors:
+            try:
+                elements = await page.query_selector_all(selector)
+                for el in elements:
+                    placeholder = await el.get_attribute('placeholder') or ''
+                    # Skip login-related fields
+                    if '登录' in placeholder or '手机' in placeholder or '验证码' in placeholder:
+                        continue
+                    text = await el.inner_text()
+                    if len(text) < 1000:  # Likely a content field
+                        await el.fill(desc)
+                        print(f"正文已填写: {desc[:50]}...")
+                        desc_filled = True
+                        break
+                if desc_filled:
+                    break
+            except:
+                pass
+        
+        # Wait a bit for fields to settle
+        await page.wait_for_timeout(2000)
         
         # Save cookies
         cookies = await context.cookies()
@@ -121,7 +172,7 @@ class XiaohongshuVideo:
             json.dump(cookie_dict, f, indent=2)
         print("Cookie saved!")
         
-        # Click publish
+        # Click publish button
         print("点击发布按钮...")
         publish_buttons = await page.query_selector_all('button')
         for btn in publish_buttons:
