@@ -226,16 +226,18 @@ class TiktokVideo(object):
 
         await self.choose_base_locator(page)
 
-        # 关闭可能遮挡的弹窗
-        await self.close_popups(page)
-        await page.wait_for_timeout(1000)
+        # 关闭可能遮挡的弹窗 - 多次尝试
+        for i in range(3):
+            await self.close_popups(page)
+            await page.wait_for_timeout(1000)
 
         upload_button = self.locator_base.locator(
             'button:has-text("Select video"):visible')
         await upload_button.wait_for(state='visible')  # 确保按钮可见
 
+        # 使用 force 绕过遮罩点击
         async with page.expect_file_chooser() as fc_info:
-            await upload_button.click()
+            await upload_button.click(force=True)
         file_chooser = await fc_info.value
         await file_chooser.set_files(self.file_path)
 
@@ -257,7 +259,8 @@ class TiktokVideo(object):
     async def add_title_tags(self, page):
 
         editor_locator = self.locator_base.locator('div.public-DraftEditor-content')
-        await editor_locator.click()
+        # 使用 force 绕过可能的遮罩
+        await editor_locator.click(force=True)
 
         await page.keyboard.press("End")
 
@@ -289,15 +292,17 @@ class TiktokVideo(object):
 
     async def click_publish(self, page):
         # 先关闭所有弹窗
-        await self.close_popups(page)
-        await page.wait_for_timeout(1000)
+        for i in range(3):
+            await self.close_popups(page)
+            await page.wait_for_timeout(1000)
         
         success_flag_div = '#\\:r9\\:'
         while True:
             try:
+                # 使用 force 绕过遮罩
                 publish_button = self.locator_base.locator('div.btn-post')
                 if await publish_button.count():
-                    await publish_button.click()
+                    await publish_button.click(force=True)
 
                 await self.locator_base.locator(success_flag_div).wait_for(state="visible", timeout=3000)
                 tiktok_logger.success("  [-] video published success")
