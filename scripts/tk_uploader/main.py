@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import re
+import time
 from datetime import datetime
 
 from playwright.async_api import Playwright, async_playwright
@@ -318,20 +319,43 @@ class TiktokVideo(object):
                     await asyncio.sleep(0.5)
 
     async def detect_upload_status(self, page):
+        tiktok_logger.info("  [-] 检测上传状态...")
+        max_wait_time = 180  # 最多等待3分钟
+        start_time = time.time()
+        
         while True:
             try:
-                if await self.locator_base.locator('div.btn-post > button').get_attribute("disabled") is None:
-                    tiktok_logger.info("  [-]video uploaded.")
+                elapsed = time.time() - start_time
+                if elapsed > max_wait_time:
+                    tiktok_logger.info("  [-] 上传超时，跳过等待")
                     break
-                else:
-                    tiktok_logger.info("  [-] video uploading...")
-                    await asyncio.sleep(2)
-                    if await self.locator_base.locator('button[aria-label="Select file"]').count():
-                        tiktok_logger.info("  [-] found some error while uploading now retry...")
-                        await self.handle_upload_error(page)
-            except:
-                tiktok_logger.info("  [-] video uploading...")
-                await asyncio.sleep(2)
+                
+                # 尝试多种方式检测上传完成
+                # 方法1: 检查发布按钮是否可用
+                post_btn = self.locator_base.locator('div.btn-post button, button:has-text("Post"), button:has-text("发布")')
+                if await post_btn.count():
+                    btn_disabled = await post_btn.get_attribute("disabled")
+                    if btn_disabled is None:
+                        tiktok_logger.info("  [-] video uploaded (按钮可用)")
+                        break
+                
+                # 方法2: 检查上传进度条是否消失
+                progress = self.locator_base.locator('[class*="progress"]')
+                if await progress.count() == 0:
+                    tiktok_logger.info("  [-] video uploaded (进度条消失)")
+                    break
+                
+                # 方法3: 检查是否有错误
+                if await self.locator_base.locator('button[aria-label="Select file"]').count():
+                    tiktok_logger.info("  [-] 发现错误，重试...")
+                    await self.handle_upload_error(page)
+                
+                tiktok_logger.info("  [-] video uploading... (已等待 {:.0f}s)".format(elapsed))
+                await asyncio.sleep(3)
+                
+            except Exception as e:
+                tiktok_logger.info(f"  [-] 检测状态异常: {e}")
+                await asyncio.sleep(3)
 
     async def choose_base_locator(self, page):
         # await page.wait_for_selector('div.upload-container')
