@@ -77,6 +77,47 @@ class TiktokVideo(object):
         self.account_file = account_file
         self.locator_base = None
 
+    async def close_popups(self, page):
+        """关闭可能弹出的对话框和遮罩"""
+        try:
+            tiktok_logger.info('  [-] 关闭弹窗...')
+            # 按ESC关闭
+            await page.keyboard.press("Escape")
+            await page.wait_for_timeout(500)
+            
+            # 关闭可能的各种弹窗
+            close_selectors = [
+                'button[class*="close"]',
+                'button[aria-label="Close"]',
+                'button:has-text("Close")]',
+                'button:has-text("Got it")]',
+                'button:has-text("OK")]',
+                'button:has-text("Skip")]',
+                'div[class*="overlay"]',
+                'div[class*="modal"] button'
+            ]
+            
+            for selector in close_selectors:
+                try:
+                    btn = page.locator(selector).first
+                    if await btn.count() > 0 and await btn.is_visible():
+                        await btn.click()
+                        await page.wait_for_timeout(500)
+                except:
+                    pass
+            
+            # 关闭 joyride 弹窗
+            try:
+                overlay = page.locator('div.react-joyride__overlay')
+                if await overlay.count() > 0:
+                    await page.keyboard.press("Escape")
+                    await page.wait_for_timeout(500)
+            except:
+                pass
+                
+            tiktok_logger.info('  [-] 弹窗处理完成')
+        except Exception as e:
+            tiktok_logger.info(f'  [-] 关闭弹窗失败: {e}')
 
     async def set_schedule_time(self, page, publish_date):
         schedule_input_element = self.locator_base.get_by_label('Schedule')
@@ -176,6 +217,10 @@ class TiktokVideo(object):
 
         await self.choose_base_locator(page)
 
+        # 关闭可能遮挡的弹窗
+        await self.close_popups(page)
+        await page.wait_for_timeout(1000)
+
         upload_button = self.locator_base.locator(
             'button:has-text("Select video"):visible')
         await upload_button.wait_for(state='visible')  # 确保按钮可见
@@ -234,6 +279,10 @@ class TiktokVideo(object):
             await page.keyboard.press("End")
 
     async def click_publish(self, page):
+        # 先关闭所有弹窗
+        await self.close_popups(page)
+        await page.wait_for_timeout(1000)
+        
         success_flag_div = '#\\:r9\\:'
         while True:
             try:
