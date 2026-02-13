@@ -317,23 +317,18 @@ class TiktokVideo(object):
                 await page.wait_for_timeout(2000)
                 
                 # 检查是否有确认对话框并处理
-                confirm_selectors = [
-                    'button:has-text("Confirm")]',
-                    'button:has-text("Post")]',
-                    'button:has-text("是")]',
-                    'button:has-text("确认")]',
-                    'button[data-e2e="upload-btn"]'
-                ]
+                confirm_texts = ["Confirm", "Post", "Yes", "是", "确认"]
                 
-                for sel in confirm_selectors:
-                    confirm_btn = page.locator(sel)
-                    if await confirm_btn.count():
-                        try:
+                for text in confirm_texts:
+                    try:
+                        confirm_btn = page.get_by_role("button", name=text)
+                        if await confirm_btn.count():
                             await confirm_btn.first.click(force=True)
-                            tiktok_logger.info(f"  [-] 点击了确认按钮: {sel}")
+                            tiktok_logger.info(f"  [-] 点击了确认按钮: {text}")
                             await page.wait_for_timeout(2000)
-                        except:
-                            pass
+                            break
+                    except Exception as e:
+                        pass
                 
                 # 检查URL是否变化 (表示发布成功)
                 if "video" not in page.url.lower() or "manage" in page.url:
