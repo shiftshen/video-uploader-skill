@@ -76,13 +76,18 @@ async def get_tencent_cookie(account_file):
 
 
 async def weixin_setup(account_file, handle=False):
-    account_file = get_absolute_path(account_file, "tencent_uploader")
-    if not os.path.exists(account_file) or not await cookie_auth(account_file):
+    # If account_file is an absolute path or contains /, use as-is
+    if os.path.isabs(account_file) or "/" in account_file:
+        account_path = account_file
+    else:
+        account_path = get_absolute_path(account_file, "tencent_uploader")
+    
+    if not os.path.exists(account_path) or not await cookie_auth(account_path):
         if not handle:
             # Todo alert message
             return False
         tencent_logger.info('[+] cookie文件不存在或已失效，即将自动打开浏览器，请扫码登录，登陆后会自动生成cookie文件')
-        await get_tencent_cookie(account_file)
+        await get_tencent_cookie(account_path)
     return True
 
 

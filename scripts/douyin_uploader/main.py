@@ -39,12 +39,18 @@ async def cookie_auth(account_file):
 
 
 async def douyin_setup(account_file, handle=False):
-    if not os.path.exists(account_file) or not await cookie_auth(account_file):
+    # If account_file is an absolute path or contains /, use as-is
+    if os.path.isabs(account_file) or "/" in account_file:
+        account_path = account_file
+    else:
+        account_path = get_absolute_path(account_file, "douyin_uploader")
+    
+    if not os.path.exists(account_path) or not await cookie_auth(account_path):
         if not handle:
             # Todo alert message
             return False
         douyin_logger.info('[+] cookie文件不存在或已失效，即将自动打开浏览器，请扫码登录，登陆后会自动生成cookie文件')
-        await douyin_cookie_gen(account_file)
+        await douyin_cookie_gen(account_path)
     return True
 
 

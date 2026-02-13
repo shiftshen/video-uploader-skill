@@ -39,12 +39,17 @@ async def cookie_auth(account_file):
 
 
 async def tiktok_setup(account_file, handle=False):
-    account_file = get_absolute_path(account_file, "tk_uploader")
-    if not os.path.exists(account_file) or not await cookie_auth(account_file):
+    # If account_file is an absolute path or contains /, don't add base_dir
+    if os.path.isabs(account_file) or "/" in account_file:
+        account_path = account_file
+    else:
+        account_path = get_absolute_path(account_file, "tk_uploader")
+    
+    if not os.path.exists(account_path) or not await cookie_auth(account_path):
         if not handle:
             return False
         tiktok_logger.info('[+] cookie file is not existed or expired. Now open the browser auto. Please login with your way(gmail phone, whatever, the cookie file will generated after login')
-        await get_tiktok_cookie(account_file)
+        await get_tiktok_cookie(account_path)
     return True
 
 
