@@ -21,36 +21,38 @@ class XiaohongshuVideo:
         self.local_executable_path = LOCAL_CHROME_PATH
         
     async def setup_browser(self, playwright):
-        """Setup browser with stealth"""
+        """Setup browser with stealth - use persistent context to save login state"""
         stealth_js_path = BASE_DIR / "utils/stealth.min.js"
         
+        # Use persistent user data dir to save login state
+        user_data_dir = BASE_DIR / "cookies/xhs_uploader/browser_data"
+        
         if self.local_executable_path:
-            browser = await playwright.chromium.launch(
+            # Launch with persistent context - this keeps cookies and login state
+            context = await playwright.chromium.launch_persistent_context(
+                user_data_dir,
                 headless=False,
-                executable_path=self.local_executable_path
+                executable_path=self.local_executable_path,
+                args=['--disable-blink-features=AutomationControlled']
             )
         else:
-            browser = await playwright.chromium.launch(headless=False)
+            context = await playwright.chromium.launch_persistent_context(
+                user_data_dir,
+                headless=False,
+                args=['--disable-blink-features=AutomationControlled']
+            )
         
-        context = await browser.new_context()
+        # Add stealth script
         await context.add_init_script(path=stealth_js_path)
         
-        # Load cookies if available
-        if self.account_file and os.path.exists(self.account_file):
-            with open(self.account_file, 'r') as f:
-                cookies = json.load(f)
-                cookie_list = [
-                    {'name': k, 'value': v, 'domain': '.xiaohongshu.com', 'path': '/'}
-                    for k, v in cookies.items()
-                ]
-                await context.add_cookies(cookie_list)
+        # Get the default page
+        page = context.pages[0] if context.pages else await context.new_page()
         
-        return browser, context
+        return context, page
     
     async def upload(self, playwright):
         """Upload video using browser"""
-        browser, context = await self.setup_browser(playwright)
-        page = await context.new_page()
+        context, page = await self.setup_browser(playwright)
         
         # Go to creator upload page
         await page.goto('https://creator.xiaohongshu.com/publish/publish?source=official')
@@ -58,7 +60,7 @@ class XiaohongshuVideo:
         
         # Check if login required
         if 'login' in page.url:
-            print("请在浏览器中登录账号...")
+            print("请在浏览器中登录账号...（登录后会保存状态，下次不需要再登录）")
             await page.wait_for_timeout(120000)  # Wait for manual login
             await page.wait_for_timeout(5000)
         
@@ -185,7 +187,8 @@ class XiaohongshuVideo:
         await page.wait_for_timeout(5000)
         print("上传流程完成!")
         
-        await browser.close()
+        # Don't close context - keep it open to preserve login state
+        # await browser.close()
         return True
     
     async def main(self):

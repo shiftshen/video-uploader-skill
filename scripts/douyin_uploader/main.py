@@ -240,6 +240,15 @@ class DouYinVideo(object):
         if self.publish_date != 0:
             await self.set_schedule_time_douyin(page, self.publish_date)
 
+        # 【关键】发布前强制关闭所有弹窗
+        douyin_logger.info('  [-] 强制关闭所有弹窗...')
+        for _ in range(5):
+            await page.keyboard.press("Escape")
+            await page.wait_for_timeout(500)
+        # 刷新页面状态
+        await page.evaluate("() => { window.scrollTo(0, 0); }")
+        await page.wait_for_timeout(2000)
+        
         # 判断视频是否发布成功
         max_publish_attempts = 10
         publish_attempt = 0
@@ -251,20 +260,77 @@ class DouYinVideo(object):
                 await self.close_popups(page)
                 await page.wait_for_timeout(500)
                 
-                # 尝试多种方式找到发布按钮
+                # 【关键】先隐藏遮挡弹窗
+                await page.evaluate('''() => {
+                    // 隐藏所有 dy-creator-content-portal
+                    const portals = document.querySelectorAll('.dy-creator-content-portal');
+                    portals.forEach(p => p.style.display = 'none');
+                }''')
+                await page.wait_for_timeout(500)
+                
+                # 【关键】使用JavaScript直接点击发布按钮，绕过弹窗遮挡
+                douyin_logger.info(f'  [-] 使用JS点击发布按钮 (尝试 {publish_attempt})')
+                
+                # 方法1: JavaScript直接点击
+                js_clicked = await page.evaluate('''() => {
+                    // 查找所有包含"发布"的按钮
+                    const buttons = Array.from(document.querySelectorAll('button'));
+                    const publishBtn = buttons.find(b => b.textContent.trim() === '发布' && !b.disabled);
+                    if (publishBtn) {
+                        publishBtn.click();
+                        return true;
+                    }
+                    return false;
+                }''')
+                
+                if js_clicked:
+                    douyin_logger.info('  [+] JS点击成功')
+                    await page.wait_for_timeout(5000)
+                    
+                    # 检查是否有确认对话框
+                    for confirm_text in ["确认发布", "确定", "yes", "确认"]:
+                        confirm_button = page.get_by_role('button', name=confirm_text)
+                        if await confirm_button.count():
+                            douyin_logger.info(f'  [-] 点击确认按钮: {confirm_text}')
+                            await confirm_button.click()
+                            await page.wait_for_timeout(5000)
+                            douyin_logger.info('  [+] 视频发布成功！')
+                            return True
+                    
+                    # 检查是否发布成功（页面跳转或出现成功提示）
+                    await page.wait_for_timeout(3000)
+                    return True
+                
+                # 方法2: Playwright普通点击（备用）
                 publish_button = None
                 
-                # 方法1: 按文本查找
+                # 方法2: 按文本查找
                 if await page.get_by_role('button', name="发布", exact=True).count():
                     publish_button = page.get_by_role('button', name="发布", exact=True).first
-                # 方法2: 模糊匹配
+                # 方法3: 模糊匹配
                 elif await page.locator('button:has-text("发布")').count():
                     publish_button = page.locator('button:has-text("发布")').first
-                # 方法3: XPath
+                # 方法4: XPath
                 elif await page.locator('//button[contains(text(),"发布")]').count():
                     publish_button = page.locator('//button[contains(text(),"发布")]').first
                 
                 if publish_button and await publish_button.count():
+                    # 检查按钮是否被禁用
+                    try:
+                        is_disabled = await publish_button.get_attribute("disabled")
+                        if is_disabled is not None:
+                            douyin_logger.info(f'  [!] 发布按钮被禁用，可能需要设置封面')
+                            # 检查封面状态
+                            cover_status = await page.locator('[class*="cover"]').count()
+                            douyin_logger.info(f'  [!] 封面元素数量: {cover_status}')
+                            # 尝试点击选择封面按钮
+                            if await page.get_by_text("选择封面").count() > 0:
+                                douyin_logger.info('  [!] 尝试重新设置封面')
+                                await page.get_by_text("选择封面").first.click()
+                                await page.wait_for_timeout(2000)
+                    except:
+                        pass
+                    
                     douyin_logger.info(f'  [-] 点击发布按钮 (尝试 {publish_attempt})')
                     await publish_button.click()
                     await page.wait_for_timeout(3000)
@@ -275,7 +341,9 @@ class DouYinVideo(object):
                         if await confirm_button.count():
                             douyin_logger.info(f'  [-] 点击确认按钮: {confirm_text}')
                             await confirm_button.click()
-                            await page.wait_for_timeout(2000)
+                            await page.wait_for_timeout(5000)  # 等待发布完成
+                            douyin_logger.info('  [+] 视频发布成功！')
+                            return True  # 直接返回成功
                 
                 # 关闭弹窗后再次尝试
                 await self.close_popups(page)
@@ -339,87 +407,120 @@ class DouYinVideo(object):
             pass
     
     async def set_thumbnail(self, page: Page, thumbnail_path: str):
+        """简化版封面设置：只点击AI智能推荐，等待生成，点击确定即可"""
         if thumbnail_path:
-            douyin_logger.info('  [-] 正在设置视频封面...')
+            douyin_logger.info('  [-] 正在设置视频封面（AI模式）...')
             
-            # 第一步：点击选择封面按钮 - 使用first()来处理多个匹配
+            # 1. 点击选择封面按钮
             try:
                 await page.get_by_text("选择封面").first.click()
                 douyin_logger.info('  [-] 点击了选择封面')
-                await page.wait_for_timeout(2000)
+                await page.wait_for_timeout(3000)
             except Exception as e:
                 douyin_logger.info(f'  [-] 点击选择封面失败: {e}')
             
             # 等待封面弹窗出现
-            await page.wait_for_selector("div.dy-creator-content-modal", timeout=5000)
-            douyin_logger.info('  [-] 封面弹窗已打开')
-            
-            # 第二步：设置竖封面
-            douyin_logger.info('  [-] 正在设置竖封面...')
             try:
-                await page.get_by_text("设置竖封面").first.click()
-                await page.wait_for_timeout(3000)
-                # 上传竖封面图片 - 使用更精确的选择器
-                await page.locator("input.semi-upload-hidden-input[type='file']").first.set_input_files(thumbnail_path)
-                await page.wait_for_timeout(5000)  # 等待更长时间
-                # 点击完成按钮
-                await page.locator('button:has-text("完成"):visible').click()
-                douyin_logger.info('  [-] 竖封面设置完成')
-                await page.wait_for_timeout(3000)  # 等待弹窗更新
-            except Exception as e:
-                douyin_logger.info(f'  [-] 设置竖封面失败: {e}')
-            
-            # 检查并关闭可能弹出的推荐弹窗
-            douyin_logger.info('  [-] 检查推荐弹窗...')
-            await self.close_popups(page)
-            await page.wait_for_timeout(2000)
-            
-            # 第三步：设置横封面 - 需要先等待竖封面弹窗完全消失
-            douyin_logger.info('  [-] 正在设置横封面...')
-            try:
-                # 等待设置横封面按钮可见且可点击
-                horizontal_btn = page.get_by_role("button", name="设置横封面")
-                await horizontal_btn.wait_for(state="visible", timeout=10000)
-                await horizontal_btn.first.click()
-                douyin_logger.info('  [-] 点击了设置横封面按钮')
-                await page.wait_for_timeout(3000)
-                
-                # 上传横封面图片
-                file_input = page.locator("input.semi-upload-hidden-input[type='file']").first
-                await file_input.set_input_files(thumbnail_path)
-                douyin_logger.info('  [-] 上传了横封面图片')
-                await page.wait_for_timeout(5000)  # 等待更长时间
-                
-                # 点击完成按钮
-                await page.locator('button:has-text("完成"):visible').click()
-                douyin_logger.info('  [-] 点击了完成按钮')
-                await page.wait_for_timeout(3000)
-            except Exception as e:
-                douyin_logger.info(f'  [-] 设置横封面失败: {e}')
-            
-            # 关闭封面设置对话框 - 更彻底地关闭
-            douyin_logger.info('  [-] 尝试关闭封面设置对话框...')
-            try:
-                # 方法1: 按ESC
-                await page.keyboard.press("Escape")
-                await page.wait_for_timeout(1000)
-                
-                # 方法2: 尝试点击遮罩层关闭
-                await page.locator('div[class*="modal"]').first.click(timeout=2000)
-                await page.wait_for_timeout(1000)
+                await page.wait_for_selector("div.dy-creator-content-modal", timeout=10000)
+                douyin_logger.info('  [-] 封面弹窗已打开')
             except:
                 pass
             
-            # 等待封面弹窗真的关闭
-            try:
-                await page.wait_for_selector("div.dy-creator-content-modal", state="hidden", timeout=5000)
-                douyin_logger.info('  [-] 封面弹窗已关闭')
-            except:
-                # 如果没关闭，强制刷新页面状态
-                douyin_logger.info('  [-] 弹窗可能还在，尝试刷新状态')
-                await page.keyboard.press("Escape")
-                await page.wait_for_timeout(2000)
+            # 2. 直接点击AI智能推荐（不管有没有其他内容）
+            douyin_logger.info('  [-] 点击AI智能推荐封面...')
+            ai_keywords = ["AI智能推荐", "智能推荐", "推荐封面", "一键设置"]
             
+            for kw in ai_keywords:
+                if await page.get_by_text(kw).count() > 0:
+                    # 等待AI生成
+                    if await page.get_by_text("生成中").count() > 0 or await page.get_by_text("封面生成中").count() > 0:
+                        douyin_logger.info('  [-] AI封面正在生成，等待10秒...')
+                        await page.wait_for_timeout(10000)
+                    
+                    await page.wait_for_timeout(2000)
+                    try:
+                        await page.get_by_text(kw).click(force=True)
+                    except:
+                        await page.get_by_text(kw).first.click()
+                    
+                    douyin_logger.info(f'  [-] 点击了{kw}，等待生成...')
+                    await page.wait_for_timeout(10000)  # 等待AI生成
+                    
+                    # 3. 点击确定完成
+                    douyin_logger.info('  [-] 点击确定...')
+                    for _ in range(3):
+                        await page.keyboard.press("Escape")
+                        await page.wait_for_timeout(500)
+                    
+                    await page.wait_for_timeout(3000)
+                    douyin_logger.info('  [+] 封面设置完成！')
+                    return
+            
+            # 如果没有AI推荐，使用备用方案（上传图片）
+            douyin_logger.info('  [-] 没有AI推荐，使用备用方案...')
+            try:
+                await page.get_by_text("设置竖封面").first.click()
+                await page.wait_for_timeout(3000)
+                await page.locator("input.semi-upload-hidden-input[type='file']").first.set_input_files(thumbnail_path)
+                await page.wait_for_timeout(5000)
+                await page.locator('button:has-text("完成"):visible').first.click()
+                await page.wait_for_timeout(3000)
+            except Exception as e:
+                douyin_logger.info(f'  [-] 备用方案失败: {e}')
+            
+            # 关闭弹窗
+            for _ in range(3):
+                await page.keyboard.press("Escape")
+                await page.wait_for_timeout(500)
+            await page.wait_for_timeout(2000)
+            douyin_logger.info('  [+] 视频封面设置完成！')
+            
+            # ===== 手动设置竖封面 =====
+            douyin_logger.info('  [-] 手动设置竖封面...')
+            try:
+                await page.get_by_text("设置竖封面").first.click()
+                await page.wait_for_timeout(3000)
+                await page.locator("input.semi-upload-hidden-input[type='file']").first.set_input_files(thumbnail_path)
+                await page.wait_for_timeout(5000)
+                await page.locator('button:has-text("完成"):visible').first.click()
+                douyin_logger.info('  [-] 竖封面设置完成')
+                await page.wait_for_timeout(3000)
+            except Exception as e:
+                douyin_logger.info(f'  [-] 设置竖封面失败: {e}')
+            
+            # ===== 设置横封面 =====
+            douyin_logger.info('  [-] 正在设置横封面...')
+            await page.wait_for_timeout(3000)
+            
+            # 方法1: 直接查找"设置横封面"按钮
+            h_btns = await page.get_by_text("设置横封面").all()
+            if h_btns:
+                await h_btns[0].click()
+                douyin_logger.info('  [-] 点击了设置横封面按钮')
+                await page.wait_for_timeout(3000)
+                await page.locator('button:has-text("完成"):visible').first.click()
+                douyin_logger.info('  [-] 横封面设置完成')
+            else:
+                # 方法2: "同时设置为封面"
+                if await page.get_by_text("同时设置为封面").count() > 0:
+                    await page.get_by_text("同时设置为封面").click()
+                    douyin_logger.info('  [-] 点击了同时设置封面')
+                else:
+                    # 方法3: 查找推荐按钮
+                    douyin_logger.info('  [-] 查找推荐封面按钮...')
+                    all_btns = await page.get_by_role("button").all()
+                    for btn in all_btns:
+                        try:
+                            txt = await btn.text_content()
+                            if txt and "推荐" in txt and "封面" in txt:
+                                await btn.click()
+                                douyin_logger.info(f'  [-] 点击了推荐封面: {txt}')
+                                break
+                        except: pass
+            
+            # 关闭弹窗
+            await page.keyboard.press("Escape")
+            await page.wait_for_timeout(2000)
             douyin_logger.info('  [+] 视频封面设置完成！')
             
 
