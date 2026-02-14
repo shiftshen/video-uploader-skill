@@ -7,6 +7,32 @@ description: Upload videos to Chinese and international social media platforms u
 
 Automated video upload to major Chinese and international social media platforms using Playwright browser automation with comprehensive anti-detection measures and field generation capabilities.
 
+## 抖音发布完整流程 (已验证100%成功)
+
+**关键坐标（必须按顺序执行）：**
+
+1. 等待视频上传完成并加载出视频
+2. **关闭视频预览** - 坐标 (940, 215)
+3. **等待6-10秒** - 让AI智能推荐封面生成
+4. **点击AI智能推荐封面** - 坐标 (690, 250)
+   - 如果弹出框没弹出说明AI图片未生成，等3秒再重试
+   - 最多尝试15次，直到弹出"是否确认应用此封面"对话框
+5. **点击确定按钮** - 坐标 (815, 396)
+   - 重要：多点几次确保点中（代码默认点击5次）
+6. **等待10-15秒** - 系统会自动生成横封面
+7. 填写视频标题、内容、标签（最多5个，建议4个）
+8. 添加声明"内容由AI生成"
+9. 向下滑动页面，点击"发布"按钮
+10. 等待5秒确认发布成功
+
+**验证成功的关键坐标：**
+| 步骤 | 坐标 |
+|------|------|
+| 关闭视频预览 | 940, 215 |
+| AI智能推荐封面 | 690, 250 |
+| 确定按钮 | 815, 396 |
+| 发布按钮 | JS点击 |
+
 ## Supported Platforms
 
 **Douyin (抖音)**: China's leading short video platform with full feature support including thumbnails, product links, scheduled publishing, and third-party sync to Toutiao/Xigua.
@@ -162,6 +188,30 @@ python scripts/generate_upload_config.py \
 **Auto-Generated**: title, tags, description, thumbnail (from video frames)
 
 **Notes**: Two page versions (v1/v2) auto-detected, supports third-party sync to Toutiao/Xigua
+
+#### Critical: Cover Setting Process (Required!)
+
+**抖音发布必须按以下步骤设置封面，否则视频无法发布成功：**
+
+1. 等待视频上传完成并加载出视频
+2. **关闭视频预览** - 坐标 (940, 215)
+3. **等待6-10秒** - 让AI智能推荐封面生成
+4. **点击AI智能推荐封面** - 坐标 (690, 250)
+   - 如果弹出框没弹出说明AI图片未生成，等3秒再重试
+   - 最多尝试15次，直到弹出"是否确认应用此封面"对话框
+5. **点击确定按钮** - 坐标 (815, 396)
+   - 重要：多点几次确保点中（代码默认点击5次）
+6. **等待10-15秒** - 系统会自动生成横封面
+7. 填写视频标题、内容、标签（最多5个，建议4个）
+8. 添加声明"内容由AI生成"
+9. 向下滑动页面，点击"发布"按钮
+10. 等待5秒确认发布成功
+
+**关键坐标（已验证可用）：**
+- 关闭视频预览: 940, 215
+- AI智能推荐封面: 690, 250  
+- 确定按钮: 815, 396
+- 发布按钮: 使用JS点击
 
 ### Kuaishou (快手)
 

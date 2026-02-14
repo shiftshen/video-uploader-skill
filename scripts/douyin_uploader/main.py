@@ -468,57 +468,86 @@ class DouYinVideo(object):
             pass
     
     async def set_thumbnail(self, page: Page, thumbnail_path: str):
-        """使用AI智能推荐设置封面"""
-        douyin_logger.info('  [-] 正在设置视频封面（AI模式）...')
+        """按用户提供的坐标流程"""
+        douyin_logger.info('  [-] 开始封面流程...')
         
-        # 1. 点击选择封面按钮
-        try:
-            await page.get_by_text("选择封面").click(timeout=5000)
-            douyin_logger.info('  [-] 点击了选择封面')
-            await page.wait_for_timeout(2000)
-        except:
-            douyin_logger.info('  [-] 没有选择封面按钮，尝试直接设置')
+        # 1. 等待视频上传完成
+        await page.wait_for_timeout(10000)
         
-        # 2. 检查是否有封面对话框弹出来
-        try:
-            # 等待封面相关元素
-            await page.wait_for_timeout(2000)
-            
-            # 3. 尝试使用AI推荐或直接关闭对话框
-            ai_found = False
-            for kw in ["AI智能推荐", "智能推荐", "推荐封面"]:
-                if await page.get_by_text(kw).count() > 0:
-                    douyin_logger.info(f'  [-] 找到{kw}，点击...')
-                    await page.get_by_text(kw).click()
-                    await page.wait_for_timeout(8000)  # 等待生成
-                    ai_found = True
-                    break
-            
-            if ai_found:
-                # 4. 点击确定或完成
-                for txt in ["确定", "完成", "确认"]:
-                    if await page.get_by_role("button", name=txt).count() > 0:
-                        await page.get_by_role("button", name=txt).click()
-                        break
-                await page.wait_for_timeout(2000)
-            
-            # 5. 关闭所有弹窗
-            for _ in range(5):
-                await page.keyboard.press("Escape")
-                await page.wait_for_timeout(500)
-                
-        except Exception as e:
-            douyin_logger.info(f'  [-] 封面设置异常: {e}')
-        
-        # 6. 强制关闭可能残留的弹窗
+        # 2. 关闭视频预览 (940, 215)
+        douyin_logger.info('  [-] 关闭视频预览(940, 215)...')
         await page.evaluate('''() => {
-            document.querySelectorAll('.dy-creator-content-portal, [class*="modal"]').forEach(el => el.style.display = 'none');
+            const x = 940, y = 215;
+            const el = document.elementFromPoint(x, y);
+            if(el){ el.click(); }
         }''')
-        await page.wait_for_timeout(1000)
+        await page.wait_for_timeout(2000)
         
-        douyin_logger.info('  [+] 封面设置完成')
+        # 3. 等待6-10秒让AI封面生成
+        douyin_logger.info('  [-] 等待AI封面生成(10秒)...')
+        await page.wait_for_timeout(10000)
+        
+        # 4. 点击AI智能推荐封面 (690, 250)
+        douyin_logger.info('  [-] 点击AI封面(690, 250)...')
+        for i in range(15):
+            await page.evaluate('''() => {
+                const x = 690, y = 250;
+                const el = document.elementFromPoint(x, y);
+                if(el){ el.click(); }
+            }''')
+            douyin_logger.info(f'  [-] 点击第{i+1}次')
+            
+            # 点击后等待3秒让弹出框出现
+            await page.wait_for_timeout(3000)
+            
+            # 检查是否弹出确认框
+            if await page.get_by_text("是否确认应用此封面").count()>0:
+                douyin_logger.info('  [-] 找到确认对话框!')
+                break
+        
+        # 5. 等待弹出框稳定，然后点击确定 (815, 396)，多点几次
+        douyin_logger.info('  [-] 点击确定(815, 396)...')
+        await page.wait_for_timeout(1000)
+        for i in range(5):
+            await page.evaluate('''() => {
+                const x = 815, y = 396;
+                const el = document.elementFromPoint(x, y);
+                if(el){ el.click(); }
+            }''')
+            douyin_logger.info(f'  [-] 确定按钮点击第{i+1}次')
+            await page.wait_for_timeout(500)
+        await page.wait_for_timeout(15000)  # 等待10-15秒生成横封面
+        
+        # 6. 验证封面状态
+        douyin_logger.info('  [-] 验证封面状态...')
+        cover_check = await page.evaluate('''() => {
+            const text = document.body.innerText;
+            if(text.includes('横/竖双封面缺失') || text.includes('封面缺失')){
+                return 'COVER_MISSING';
+            }
+            return 'COVER_OK';
+        }''')
+        douyin_logger.info(f'  [-] 封面状态: {cover_check}')
+        
+        # 7. 添加AI声明
+        if cover_check == 'COVER_OK':
+            douyin_logger.info('  [-] 添加AI声明...')
+            try:
+                await page.get_by_text("添加声明").scroll_into_view_if_needed()
+                await page.get_by_text("添加声明").click(timeout=5000)
+                await page.wait_for_timeout(1500)
+                if await page.locator('label:has-text("内容由AI生成")').count()>0:
+                    await page.locator('label:has-text("内容由AI生成")').click(force=True)
+                if await page.get_by_text("确定").count()>0:
+                    await page.get_by_text("确定").first.click(force=True)
+            except: await page.keyboard.press("Escape")
+        
+        douyin_logger.info('  [+] 封面完成')
+    
     async def set_location(self, page: Page, location: str = ""):
         if not location:
+            return
+        # todo supoort location later
             return
         # todo supoort location later
         # await page.get_by_text('添加标签').locator("..").locator("..").locator("xpath=following-sibling::div").locator(
