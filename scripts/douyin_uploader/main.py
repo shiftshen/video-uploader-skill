@@ -529,18 +529,27 @@ class DouYinVideo(object):
         }''')
         douyin_logger.info(f'  [-] 封面状态: {cover_check}')
         
-        # 7. 添加AI声明
-        if cover_check == 'COVER_OK':
-            douyin_logger.info('  [-] 添加AI声明...')
+        # 7. 添加AI声明 - 无论封面状态如何都要添加！
+        douyin_logger.info('  [-] 添加AI声明...')
+        try:
+            await page.get_by_text("添加声明").scroll_into_view_if_needed()
+            await page.get_by_text("添加声明").click(timeout=5000)
+            await page.wait_for_timeout(2000)
+            # 勾选"内容由AI生成"
+            ai_checkbox = page.locator('label:has-text("内容由AI生成")')
+            if await ai_checkbox.count()>0:
+                await ai_checkbox.click(force=True)
+                douyin_logger.info('  [+] 已勾选"内容由AI生成"')
+            # 点击确定
+            if await page.get_by_text("确定").count()>0:
+                await page.get_by_text("确定").first.click(force=True)
+                douyin_logger.info('  [+] 已确认AI声明')
+        except Exception as e:
+            douyin_logger.info(f'  [!] AI声明添加失败: {e}')
             try:
-                await page.get_by_text("添加声明").scroll_into_view_if_needed()
-                await page.get_by_text("添加声明").click(timeout=5000)
-                await page.wait_for_timeout(1500)
-                if await page.locator('label:has-text("内容由AI生成")').count()>0:
-                    await page.locator('label:has-text("内容由AI生成")').click(force=True)
-                if await page.get_by_text("确定").count()>0:
-                    await page.get_by_text("确定").first.click(force=True)
-            except: await page.keyboard.press("Escape")
+                await page.keyboard.press("Escape")
+            except:
+                pass
         
         douyin_logger.info('  [+] 封面完成')
     
